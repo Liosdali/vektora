@@ -19,6 +19,9 @@ public final class ColorReducer {
     private static final double MIN_BLEND_CONTRAST_SQUARED = 40 * 40;
     private static final double MAX_BLEND_RESIDUAL_SQUARED = 14 * 14;
     private static final double MAX_SHADE_DISTANCE_SQUARED = 30 * 30;
+    // A reduced color can average blends along several different edges, so it sits on no single
+    // blend line; it is still a blend when most of the pixels it stands for are.
+    private static final double MIN_BLEND_PIXEL_SHARE = 0.6;
     // Photos can have tens of thousands of colors; checking every pair of them is not worth it.
     private static final int MAX_BLEND_CHECKED_COLORS = 1024;
 
@@ -85,7 +88,8 @@ public final class ColorReducer {
 
     /**
      * Drops palette colors that are anti-aliasing blends: colors lying on the line between two
-     * colors that cover more pixels, or barely different from one that covers more. Their pixels then join the nearest remaining color, so edges
+     * colors that cover more pixels, barely different from one that covers more, or standing
+     * mostly for pixels that are such blends. Their pixels then join the nearest remaining color, so edges
      * between two flat areas stop tracing as thin slivers of in-between shades. Kept colors stay in
      * their original order.
      */
@@ -106,7 +110,15 @@ public final class ColorReducer {
         double[][] centers = palette.stream()
                 .map(color -> new double[] {color.getRed(), color.getGreen(), color.getBlue()})
                 .toArray(double[][]::new);
-        histogram.forEach((rgb, count) -> coverage[nearest(centers, rgb)] += count);
+        List<List<int[]>> members = new ArrayList<>();
+        for (int index = 0; index < palette.size(); index++) {
+            members.add(new ArrayList<>());
+        }
+        histogram.forEach((rgb, count) -> {
+            int center = nearest(centers, rgb);
+            coverage[center] += count;
+            members.get(center).add(new int[] {rgb, count});
+        });
 
         List<Integer> byCoverage = new ArrayList<>();
         for (int index = 0; index < palette.size(); index++) {
@@ -116,12 +128,28 @@ public final class ColorReducer {
                 .thenComparingInt(index -> index));
         List<Integer> kept = new ArrayList<>();
         for (int index : byCoverage) {
-            if (coverage[index] > 0 && !isBlendOf(centers[index], kept, centers)) {
+            if (coverage[index] > 0 && !isBlendOf(centers[index], kept, centers)
+                    && blendShare(members.get(index), coverage[index], kept, centers) < MIN_BLEND_PIXEL_SHARE) {
                 kept.add(index);
             }
         }
         kept.sort(Comparator.naturalOrder());
         return kept.stream().map(palette::get).toList();
+    }
+
+    private static double blendShare(
+            List<int[]> members, long coverage, List<Integer> kept, double[][] centers) {
+        if (kept.size() < 2) {
+            return 0;
+        }
+        long blended = 0;
+        for (int[] member : members) {
+            double[] color = {(member[0] >>> 16) & 0xff, (member[0] >>> 8) & 0xff, member[0] & 0xff};
+            if (isBlendOf(color, kept, centers)) {
+                blended += member[1];
+            }
+        }
+        return (double) blended / coverage;
     }
 
     private static boolean isBlendOf(double[] color, List<Integer> candidates, double[][] centers) {

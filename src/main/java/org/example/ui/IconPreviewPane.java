@@ -1,11 +1,15 @@
 package org.example.ui;
 
 import java.util.List;
+import javafx.geometry.Pos;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
 import org.example.export.IconVariant;
@@ -13,6 +17,9 @@ import org.example.export.IconVariant;
 public final class IconPreviewPane extends BorderPane {
     private final TabPane previews = new TabPane();
     private final Label heading = new Label("Önizleme");
+    private final Label adviceText = new Label();
+    private final Button adviceAction = new Button();
+    private final HBox advice = new HBox(10);
     private int splitPercent = 50;
 
     public IconPreviewPane() {
@@ -20,12 +27,35 @@ public final class IconPreviewPane extends BorderPane {
         heading.getStyleClass().add("canvas-title");
         Label hint = new Label("Soldaki kaynak, sağdaki SVG · ayırıcıyı sürükle · dama deseni saydam alanları gösterir");
         hint.getStyleClass().add("muted");
-        VBox header = new VBox(4, heading, hint);
+        adviceText.setWrapText(true);
+        adviceAction.getStyleClass().add("secondary");
+        adviceAction.setMinWidth(Region.USE_PREF_SIZE);
+        Region adviceSpacer = new Region();
+        HBox.setHgrow(adviceSpacer, Priority.ALWAYS);
+        advice.getChildren().setAll(adviceText, adviceSpacer, adviceAction);
+        advice.setAlignment(Pos.CENTER_LEFT);
+        advice.getStyleClass().add("advice-strip");
+        hideAdvice();
+        VBox header = new VBox(4, heading, hint, advice);
         header.setStyle("-fx-padding: 0 0 12 0;");
         setTop(header);
         setCenter(previews);
         VBox.setVgrow(previews, Priority.ALWAYS);
         showEmptyState();
+    }
+
+    /** A one-line suggestion above the preview with a button that acts on it. */
+    public void showAdvice(String message, String actionLabel, Runnable action) {
+        adviceText.setText(message);
+        adviceAction.setText(actionLabel);
+        adviceAction.setOnAction(event -> action.run());
+        advice.setVisible(true);
+        advice.setManaged(true);
+    }
+
+    public void hideAdvice() {
+        advice.setVisible(false);
+        advice.setManaged(false);
     }
 
     public void showVariants(List<IconVariant> variants) {

@@ -32,6 +32,11 @@ public record TraceOptions(ColorMode mode, int maxColors, List<Color> palette, i
         this(mode, maxColors, palette, 0);
     }
 
+    /** Eight colors at the "detailed" level: a few clean layers even for anti-aliased artwork. */
+    public static TraceOptions recommended() {
+        return new TraceOptions(ColorMode.REDUCE_SOURCE, 8, List.of(), 1);
+    }
+
     public static TraceOptions preserveSourceColors() {
         return new TraceOptions(ColorMode.PRESERVE_SOURCE, 256, List.of());
     }

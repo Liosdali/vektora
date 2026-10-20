@@ -21,7 +21,7 @@ public final class IconPack {
     private final Map<IconAsset, Set<String>> hiddenLayerColors = new IdentityHashMap<>();
     private final Map<IconAsset, SubjectMask> subjectMasks = new IdentityHashMap<>();
     private final Map<IconAsset, Map<String, String>> layerColors = new IdentityHashMap<>();
-    private TraceOptions traceOptions = TraceOptions.preserveSourceColors();
+    private TraceOptions traceOptions = TraceOptions.recommended();
     private SvgExportSettings exportSettings = new SvgExportSettings(128, 128, 1);
     private List<List<Color>> palettes = List.of();
 

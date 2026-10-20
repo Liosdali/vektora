@@ -58,7 +58,7 @@ public final class IconWorkspace extends BorderPane {
     private final LayerListPane layerList = new LayerListPane();
     private final PaletteEditorPane paletteEditor;
     private final ComboBox<ModeOption> colorMode = new ComboBox<>();
-    private final Spinner<Integer> colorCount = new Spinner<>(2, 256, 16, 2);
+    private final Spinner<Integer> colorCount = new Spinner<>(2, 256, 8, 2);
     private final TextField widthField = new TextField("128");
     private final TextField heightField = new TextField("128");
     private final TextField scaleField = new TextField("1.0");
@@ -85,8 +85,10 @@ public final class IconWorkspace extends BorderPane {
     private final ProgressIndicator progress = new ProgressIndicator();
     private final PreviewRequestTracker previewRequests = new PreviewRequestTracker();
     private final VBox settingsPane = new VBox(14);
+    private final FirstRunGuide firstRunGuide = FirstRunGuide.forCurrentUser();
     private boolean selectingBackground;
     private boolean syncingBackgroundControls;
+    private boolean syncingTraceControls;
 
     public IconWorkspace(IconPackController controller) {
         this.controller = controller;
@@ -95,6 +97,10 @@ public final class IconWorkspace extends BorderPane {
         buildWorkspace();
         buildStatusBar();
         configureControls();
+        syncTraceControls(controller.pack().traceOptions());
+        if (firstRunGuide.shouldShow()) {
+            previewStack.getChildren().add(firstRunCard());
+        }
         backgroundPicker.setVisible(false);
         backgroundPicker.setManaged(false);
         progress.setPrefSize(16, 16);
@@ -196,6 +202,37 @@ public final class IconWorkspace extends BorderPane {
         content.setPadding(new Insets(14, 16, 14, 16));
         HBox.setHgrow(previewStack, Priority.ALWAYS);
         setCenter(content);
+    }
+
+    private Region firstRunCard() {
+        String[] steps = {
+                "Görsel ekle: PNG veya JPG dosyalarını pakete al.",
+                "Arka planı ayır: kenardaki düz zemin kendiliğinden silinir; gerekirse konuyu bul ya da elle seç.",
+                "Katmanları düzenle: soldaki listeden gizle ya da yeniden renklendir.",
+                "Dışa aktar: SVG dosyaları, sprite ya da ZIP paketi olarak kaydet."};
+        VBox list = new VBox(8);
+        for (int index = 0; index < steps.length; index++) {
+            Label number = new Label(Integer.toString(index + 1));
+            number.getStyleClass().add("step-number");
+            number.setMinWidth(Region.USE_PREF_SIZE);
+            Label text = new Label(steps[index]);
+            text.setWrapText(true);
+            HBox row = new HBox(10, number, text);
+            row.setAlignment(Pos.TOP_LEFT);
+            list.getChildren().add(row);
+        }
+        Button close = new Button("Anladım");
+        close.getStyleClass().add("primary");
+        VBox card = new VBox(12, sectionTitle("Nasıl çalışır"), list, close);
+        card.getStyleClass().add("guide-card");
+        card.setMaxSize(440, Region.USE_PREF_SIZE);
+        StackPane.setAlignment(card, Pos.TOP_CENTER);
+        StackPane.setMargin(card, new Insets(140, 24, 0, 24));
+        close.setOnAction(event -> {
+            firstRunGuide.dismiss();
+            previewStack.getChildren().remove(card);
+        });
+        return card;
     }
 
     private void buildSettingsPane() {
@@ -442,9 +479,32 @@ public final class IconWorkspace extends BorderPane {
         }
     }
 
+    /** Shows the given options in the color controls without tracing again. */
+    private void syncTraceControls(TraceOptions options) {
+        syncingTraceControls = true;
+        try {
+            colorMode.getItems().stream().filter(option -> option.mode() == options.mode()).findFirst()
+                    .ifPresent(option -> colorMode.getSelectionModel().select(option));
+            if (options.mode() == TraceOptions.ColorMode.REDUCE_SOURCE) {
+                colorCount.getValueFactory().setValue(options.maxColors());
+            }
+            detailSlider.setValue(options.simplification());
+            detailValue.setText(DETAIL_LEVELS[options.simplification()]);
+        } finally {
+            syncingTraceControls = false;
+        }
+    }
+
+    private void applyRecommendedColors() {
+        TraceOptions recommended = TraceOptions.recommended();
+        syncTraceControls(recommended);
+        updateTraceOptions();
+        status.setText("Renkler " + recommended.maxColors() + " tona indirildi.");
+    }
+
     private void updateTraceOptions() {
         ModeOption selected = colorMode.getValue();
-        if (selected == null) {
+        if (selected == null || syncingTraceControls) {
             return;
         }
         List<List<Color>> palettes = paletteEditor.palettes();
@@ -486,6 +546,7 @@ public final class IconWorkspace extends BorderPane {
         long request = previewRequests.beginRequest();
         if (icon == null) {
             previewPane.showVariants(List.of());
+            previewPane.hideAdvice();
             layerList.showLayers(List.of(), Set.of(), Map.of(), (color, hidden) -> { }, (color, next) -> { });
             exportButton.setDisable(icons.isEmpty());
             return;
@@ -504,6 +565,9 @@ public final class IconWorkspace extends BorderPane {
                         controller.layerColors(icon), (color, hidden) -> toggleLayer(icon, color, hidden),
                         (color, replacement) -> recolorLayer(icon, color, replacement));
                 status.setText(preview.layers().size() + " katmanlı vektör önizlemesi hazır.");
+                controller.colorReductionAdvice(preview.layers().size()).ifPresentOrElse(
+                        advice -> previewPane.showAdvice(advice, "8 renge indir", this::applyRecommendedColors),
+                        previewPane::hideAdvice);
             }
         }, "Vektör önizlemesi hazırlanıyor…", () -> previewRequests.isCurrent(request));
     }

@@ -32,6 +32,8 @@ public final class IconPackController {
     private static final byte[] JPEG_SIGNATURE = {(byte) 0xff, (byte) 0xd8, (byte) 0xff};
     private static final int MAX_SUGGESTED_REGIONS = 6;
     private static final double MIN_SUGGESTED_SHARE = 0.01;
+    /** Beyond this many layers a source-color trace is usually anti-aliasing noise, not design. */
+    public static final int MAX_COMFORTABLE_LAYERS = 64;
 
     private final IconPack pack;
     private final SvgVectorizer vectorizer;
@@ -89,6 +91,15 @@ public final class IconPackController {
 
     public void setTraceOptions(TraceOptions options) {
         pack.setTraceOptions(Objects.requireNonNull(options, "Trace options are required"));
+    }
+
+    /** A nudge toward reducing colors when keeping every source tone produced too many layers. */
+    public Optional<String> colorReductionAdvice(int layerCount) {
+        if (pack.traceOptions().mode() != TraceOptions.ColorMode.PRESERVE_SOURCE
+                || layerCount <= MAX_COMFORTABLE_LAYERS) {
+            return Optional.empty();
+        }
+        return Optional.of("Bu görselde " + layerCount + " ton var. Renk sayısını azaltmak ister misin?");
     }
 
     public void setExportSettings(SvgExportSettings settings) {

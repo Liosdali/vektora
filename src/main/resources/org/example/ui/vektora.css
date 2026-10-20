@@ -354,3 +354,36 @@
 .color-picker.layer-color > .color-picker-label {
     -fx-padding: 2;
 }
+
+/* İlk açılış kartı ve öneri şeridi */
+.guide-card {
+    -fx-background-color: -vk-raised;
+    -fx-background-radius: 12;
+    -fx-border-color: -vk-border-strong;
+    -fx-border-radius: 12;
+    -fx-padding: 18;
+    -fx-effect: dropshadow(gaussian, #00000099, 24, 0, 0, 8);
+}
+
+.step-number {
+    -fx-background-color: -vk-accent;
+    -fx-background-radius: 11;
+    -fx-text-fill: -vk-on-accent;
+    -fx-font-weight: 700;
+    -fx-font-size: 12px;
+    -fx-min-width: 22;
+    -fx-min-height: 22;
+    -fx-alignment: center;
+}
+
+.advice-strip {
+    -fx-background-color: #2a2410;
+    -fx-background-radius: 8;
+    -fx-border-color: #facc15;
+    -fx-border-radius: 8;
+    -fx-padding: 8 10 8 12;
+}
+
+.advice-strip .label {
+    -fx-text-fill: #fde68a;
+}

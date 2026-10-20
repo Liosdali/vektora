@@ -376,6 +376,27 @@ class IconPackControllerTest {
         assertTrue(sourceSvg.contains("data:image/png;base64,"));
     }
 
+    @Test
+    void newPackReducesToEightColorsAtTheDetailedLevel() {
+        TraceOptions options = controller().pack().traceOptions();
+
+        assertEquals(TraceOptions.ColorMode.REDUCE_SOURCE, options.mode());
+        assertEquals(8, options.maxColors());
+        assertEquals(1, options.simplification());
+    }
+
+    @Test
+    void suggestsReducingColorsOnlyWhenSourceColorsProduceTooManyLayers() {
+        IconPackController controller = controller();
+        assertTrue(controller.colorReductionAdvice(365).isEmpty());
+
+        controller.setTraceOptions(TraceOptions.preserveSourceColors());
+
+        assertEquals("Bu görselde 365 ton var. Renk sayısını azaltmak ister misin?",
+                controller.colorReductionAdvice(365).orElseThrow());
+        assertTrue(controller.colorReductionAdvice(IconPackController.MAX_COMFORTABLE_LAYERS).isEmpty());
+    }
+
     private static IconPackController controller() {
         return new IconPackController(new IconPack(), new ImageTracerVectorizer(), new SvgExportService());
     }
