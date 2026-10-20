@@ -55,10 +55,14 @@ class ProjectFileTest {
         original.detectSubject(moon, image -> new SubjectMask(48, 48, maskValues));
         original.setSubjectFrame(moon, new Rectangle(4, 4, 40, 40));
         original.setTraceOptions(new TraceOptions(TraceOptions.ColorMode.REDUCE_SOURCE, 6, List.of(), 2));
-        original.setExportSettings(new SvgExportSettings(96, 64, 0.8));
+        original.setExportSettings(new SvgExportSettings(96, 64, 0.8, true));
         original.setPalettes(List.of(List.of(Color.RED, new Color(10, 20, 30, 128))));
         String sunLayer = original.previewWithLayers(sun).layers().getFirst().color();
         original.setLayerColor(sun, sunLayer, "#c8f25c");
+        original.setLayerName(sun, sunLayer, "Güneş");
+        List<String> sunLayers = original.previewWithLayers(sun).layers().stream()
+                .map(org.example.export.SvgLayer::color).toList();
+        original.setLayerOrder(sun, sunLayers.reversed());
         original.setLayerHidden(moon, original.previewWithLayers(moon).layers().getFirst().color(), true);
         Path project = directory.resolve("logo.vektora");
 
@@ -77,6 +81,10 @@ class ProjectFileTest {
         assertEquals(new Rectangle(4, 4, 40, 40), reopened.subjectFrame(reopenedMoon));
         assertEquals(original.backgroundSelection(moon), reopened.backgroundSelection(reopenedMoon));
         assertEquals(original.pack().palettes(), reopened.pack().palettes());
+        assertEquals(original.pack().exportSettings(), reopened.pack().exportSettings());
+        IconAsset reopenedSun = reopened.pack().icons().getFirst();
+        assertEquals(original.layerNames(sun), reopened.layerNames(reopenedSun));
+        assertEquals(original.layerOrder(sun), reopened.layerOrder(reopenedSun));
         assertTrue(!reopened.canUndoBackgroundEdit(reopenedMoon));
         Path first = directory.resolve("first.svg");
         Path second = directory.resolve("second.svg");

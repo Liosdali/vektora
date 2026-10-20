@@ -19,6 +19,9 @@ import org.xml.sax.InputSource;
 /** Treats every fill color of a traced SVG as one layer. */
 public final class SvgLayers {
     private static final String SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+    /** Path attributes that carry layer edits to the exporter; they never reach exported files. */
+    static final String LAYER_NAME = "data-layer-name";
+    static final String LAYER_RANK = "data-layer-rank";
     private static final Pattern RGB = Pattern.compile(
             "rgba?\\(\\s*(\\d{1,3})\\s*,\\s*(\\d{1,3})\\s*,\\s*(\\d{1,3})\\s*(?:,[^)]*)?\\)");
 
@@ -57,12 +60,29 @@ public final class SvgLayers {
             throws IOException {
         Objects.requireNonNull(removed, "Removed colors are required");
         Objects.requireNonNull(recolored, "Recolored layers are required");
-        recolored.values().forEach(SvgLayers::requireHexColor);
-        if (removed.isEmpty() && recolored.isEmpty()) {
+        return withLayerEdits(svg, new LayerEdits(removed, recolored, Map.of(), List.of()));
+    }
+
+    /**
+     * Applies hiding and recoloring like {@link #withLayerChanges}, and marks each visible path
+     * with its layer's name and paint rank for the exporter. A layer recolored to another traced
+     * layer's color counts as that layer, so merged layers share one name, rank and group.
+     */
+    public static String withLayerEdits(String svg, LayerEdits edits) throws IOException {
+        Objects.requireNonNull(edits, "Layer edits are required");
+        edits.recolored().values().forEach(SvgLayers::requireHexColor);
+        if (edits.isEmpty()) {
             return svg;
         }
         Document document = parse(svg);
         NodeList paths = document.getElementsByTagNameNS(SVG_NAMESPACE, "path");
+        List<String> traced = new ArrayList<>();
+        for (int index = 0; index < paths.getLength(); index++) {
+            String color = visibleColor((Element) paths.item(index));
+            if (color != null && !traced.contains(color)) {
+                traced.add(color);
+            }
+        }
         boolean changed = false;
         for (int index = 0; index < paths.getLength(); index++) {
             Element path = (Element) paths.item(index);
@@ -70,15 +90,34 @@ public final class SvgLayers {
             if (color == null) {
                 continue;
             }
-            if (removed.contains(color)) {
+            if (edits.hidden().contains(color)) {
                 path.setAttribute("opacity", "0.0");
                 changed = true;
-            } else if (recolored.containsKey(color)) {
-                String replacement = recolored.get(color);
+                continue;
+            }
+            String layer = color;
+            if (edits.recolored().containsKey(color)) {
+                String replacement = edits.recolored().get(color);
+                if (traced.contains(replacement)) {
+                    // Merged into another layer: take on that layer's color, even a changed one.
+                    layer = replacement;
+                    replacement = edits.recolored().getOrDefault(replacement, replacement);
+                }
                 path.setAttribute("fill", replacement);
                 if (!path.getAttribute("stroke").isBlank() && !"none".equals(path.getAttribute("stroke"))) {
                     path.setAttribute("stroke", replacement);
                 }
+                changed = true;
+            }
+            String name = edits.names().get(layer);
+            if (name != null && !name.isBlank()) {
+                path.setAttribute(LAYER_NAME, name.strip());
+                changed = true;
+            }
+            if (!edits.order().isEmpty()) {
+                int rank = edits.order().indexOf(layer);
+                path.setAttribute(LAYER_RANK, Integer.toString(
+                        rank >= 0 ? rank : edits.order().size() + traced.indexOf(layer)));
                 changed = true;
             }
         }

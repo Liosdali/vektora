@@ -24,6 +24,8 @@ public final class IconPack {
     private final Map<IconAsset, SubjectMask> subjectMasks = new IdentityHashMap<>();
     private final Map<IconAsset, Map<String, String>> layerColors = new IdentityHashMap<>();
     private final Map<IconAsset, Rectangle> subjectFrames = new IdentityHashMap<>();
+    private final Map<IconAsset, Map<String, String>> layerNames = new IdentityHashMap<>();
+    private final Map<IconAsset, List<String>> layerOrders = new IdentityHashMap<>();
     private TraceOptions traceOptions = TraceOptions.recommended();
     private SvgExportSettings exportSettings = new SvgExportSettings(128, 128, 1);
     private List<List<Color>> palettes = List.of();
@@ -58,6 +60,8 @@ public final class IconPack {
         subjectMasks.clear();
         layerColors.clear();
         subjectFrames.clear();
+        layerNames.clear();
+        layerOrders.clear();
         traceOptions = TraceOptions.recommended();
         exportSettings = new SvgExportSettings(128, 128, 1);
         palettes = List.of();
@@ -199,6 +203,29 @@ public final class IconPack {
             colors.put(color, replacement);
         }
         layerColors.put(icon, Map.copyOf(colors));
+    }
+
+    /** Names the layer traced as {@code color}; {@code null} removes the name. */
+    public synchronized void setLayerName(IconAsset icon, String color, String name) {
+        Map<String, String> names = new LinkedHashMap<>(layerNames(icon));
+        if (name == null) {
+            names.remove(color);
+        } else {
+            names.put(color, name);
+        }
+        layerNames.put(icon, Map.copyOf(names));
+    }
+
+    public synchronized Map<String, String> layerNames(IconAsset icon) {
+        return layerNames.getOrDefault(icon, Map.of());
+    }
+
+    public synchronized void setLayerOrder(IconAsset icon, List<String> colors) {
+        layerOrders.put(icon, List.copyOf(colors));
+    }
+
+    public synchronized List<String> layerOrder(IconAsset icon) {
+        return layerOrders.getOrDefault(icon, List.of());
     }
 
     public synchronized Map<String, String> layerColors(IconAsset icon) {

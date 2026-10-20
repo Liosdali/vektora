@@ -465,6 +465,39 @@ class IconPackControllerTest {
     }
 
     @Test
+    void layersCanBeNamedReorderedAndMerged(@TempDir Path directory) throws Exception {
+        BufferedImage image = new BufferedImage(12, 12, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 1; y < 11; y++) {
+            for (int x = 1; x < 11; x++) {
+                image.setRGB(x, y, (x < 6 ? Color.RED : Color.BLUE).getRGB());
+            }
+        }
+        Path source = directory.resolve("flag.png");
+        ImageIO.write(image, "png", source.toFile());
+        IconPackController controller = controller();
+        controller.addImages(List.of(source));
+        IconAsset icon = controller.pack().icons().getFirst();
+        List<String> traced = controller.previewWithLayers(icon).layers().stream()
+                .map(org.example.export.SvgLayer::color).toList();
+        assertEquals(2, traced.size());
+
+        controller.setLayerOrder(icon, List.of(traced.get(1), traced.get(0)));
+        controller.setLayerName(icon, traced.get(1), "Sağ");
+        org.example.ui.IconPreview reordered = controller.previewWithLayers(icon);
+
+        assertEquals(List.of(traced.get(1), traced.get(0)),
+                reordered.layers().stream().map(org.example.export.SvgLayer::color).toList());
+        assertTrue(reordered.variants().getFirst().svg().contains("inkscape:label=\"Sağ\""));
+        assertEquals(java.util.Map.of(traced.get(1), "Sağ"), controller.layerNames(icon));
+
+        controller.mergeLayer(icon, traced.get(0), traced.get(1));
+
+        String merged = controller.previewWithLayers(icon).variants().getFirst().svg();
+        assertEquals(1, merged.split("<g ", -1).length - 1);
+        assertEquals(traced.get(1), controller.layerColors(icon).get(traced.get(0)));
+    }
+
+    @Test
     void newPackReducesToEightColorsAtTheDetailedLevel() {
         TraceOptions options = controller().pack().traceOptions();
 

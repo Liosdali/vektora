@@ -58,7 +58,7 @@ public final class ProjectFile {
         root.set("traceOptions", traceOptions(pack.traceOptions()));
         SvgExportSettings export = pack.exportSettings();
         root.putObject("exportSettings").put("width", export.width()).put("height", export.height())
-                .put("scale", export.scale());
+                .put("scale", export.scale()).put("mosaic", export.mosaic());
         ArrayNode palettes = root.putArray("palettes");
         pack.palettes().forEach(palette -> palettes.add(colors(palette)));
 
@@ -78,6 +78,10 @@ public final class ProjectFile {
             pack.hiddenLayerColors(icon).stream().sorted().forEach(hidden::add);
             ObjectNode layerColors = node.putObject("layerColors");
             new TreeMap<>(pack.layerColors(icon)).forEach(layerColors::put);
+            ObjectNode layerNames = node.putObject("layerNames");
+            new TreeMap<>(pack.layerNames(icon)).forEach(layerNames::put);
+            ArrayNode layerOrder = node.putArray("layerOrder");
+            pack.layerOrder(icon).forEach(layerOrder::add);
             SubjectMask mask = pack.subjectMask(icon);
             if (mask != null) {
                 String maskEntry = "masks/" + index + ".png";
@@ -138,7 +142,7 @@ public final class ProjectFile {
             JsonNode export = root.path("exportSettings");
             SvgExportSettings exportSettings = export.isMissingNode() ? new SvgExportSettings(128, 128, 1)
                     : new SvgExportSettings(export.get("width").asInt(), export.get("height").asInt(),
-                    export.get("scale").asDouble());
+                    export.get("scale").asDouble(), export.path("mosaic").asBoolean(false));
             List<List<Color>> palettes = new ArrayList<>();
             root.path("palettes").forEach(palette -> palettes.add(colors(palette)));
             for (JsonNode node : root.path("icons")) {
@@ -156,11 +160,18 @@ public final class ProjectFile {
                 Map<String, String> layerColors = new LinkedHashMap<>();
                 node.path("layerColors").fields().forEachRemaining(
                         entry -> layerColors.put(entry.getKey(), entry.getValue().asText()));
+                Map<String, String> layerNames = new LinkedHashMap<>();
+                node.path("layerNames").fields().forEachRemaining(
+                        entry -> layerNames.put(entry.getKey(), entry.getValue().asText()));
+                List<String> layerOrder = new ArrayList<>();
+                node.path("layerOrder").forEach(color -> layerOrder.add(color.asText()));
                 restore.add(() -> {
                     pack.addIcon(icon);
                     pack.restoreBackgroundSelection(icon, selection);
                     hidden.forEach(color -> pack.setLayerHidden(icon, color, true));
                     layerColors.forEach((color, replacement) -> pack.setLayerColor(icon, color, replacement));
+                    layerNames.forEach((color, name) -> pack.setLayerName(icon, color, name));
+                    pack.setLayerOrder(icon, layerOrder);
                     if (mask != null) {
                         pack.setSubjectMask(icon, mask);
                     }

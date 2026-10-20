@@ -2,6 +2,7 @@ package org.example.ui;
 
 import org.example.export.ExportFormat;
 import org.example.export.IconVariant;
+import org.example.export.LayerEdits;
 import org.example.export.SvgExportService;
 import org.example.export.SvgExportSettings;
 import org.example.export.SvgLayer;
@@ -283,6 +284,44 @@ public final class IconPackController {
         pack.setLayerColor(icon, color, replacement);
     }
 
+    /** Names the layer traced as {@code color}; a blank name removes it. */
+    public void setLayerName(IconAsset icon, String color, String name) {
+        requireOwnedIcon(icon);
+        SvgLayers.requireHexColor(color);
+        pack.setLayerName(icon, color, name == null || name.isBlank() ? null : name.strip());
+    }
+
+    public Map<String, String> layerNames(IconAsset icon) {
+        requireOwnedIcon(icon);
+        return pack.layerNames(icon);
+    }
+
+    /** Paint order of the traced layers, first painted first; an empty list keeps the traced order. */
+    public void setLayerOrder(IconAsset icon, List<String> colors) {
+        requireOwnedIcon(icon);
+        colors.forEach(SvgLayers::requireHexColor);
+        if (new HashSet<>(colors).size() != colors.size()) {
+            throw new IllegalArgumentException("A layer can appear only once in the order");
+        }
+        pack.setLayerOrder(icon, colors);
+    }
+
+    public List<String> layerOrder(IconAsset icon) {
+        requireOwnedIcon(icon);
+        return pack.layerOrder(icon);
+    }
+
+    /** Paints the layer with the other layer's current color, so both export as one layer. */
+    public void mergeLayer(IconAsset icon, String color, String into) {
+        requireOwnedIcon(icon);
+        SvgLayers.requireHexColor(into);
+        if (color.equals(into)) {
+            throw new IllegalArgumentException("A layer cannot be merged into itself");
+        }
+        // Keyed to the other layer's traced color, so it also follows that layer's recoloring.
+        setLayerColor(icon, color, into);
+    }
+
     public Map<String, String> layerColors(IconAsset icon) {
         requireOwnedIcon(icon);
         return pack.layerColors(icon);
@@ -311,15 +350,19 @@ public final class IconPackController {
     public IconPreview previewWithLayers(IconAsset icon) throws VectorizationException, IOException {
         requireOwnedIcon(icon);
         List<IconVariant> traced = traceVariants(icon, pack.backgroundSelection(icon));
-        Set<String> hidden = pack.hiddenLayerColors(icon);
-        Map<String, String> colors = pack.layerColors(icon);
+        LayerEdits edits = layerEdits(icon);
         List<IconVariant> previews = new ArrayList<>(traced.size());
         for (IconVariant variant : traced) {
-            IconVariant visible = withLayerChanges(variant, hidden, colors);
+            IconVariant visible = withLayerChanges(variant, edits);
             String svg = exportService.renderSvg(visible, pack.exportSettings());
             previews.add(new IconVariant(variant.iconName(), variant.variantName(), svg));
         }
-        List<SvgLayer> layers = traced.isEmpty() ? List.of() : SvgLayers.layers(traced.getFirst().svg());
+        List<SvgLayer> layers = new ArrayList<>(
+                traced.isEmpty() ? List.of() : SvgLayers.layers(traced.getFirst().svg()));
+        List<String> order = pack.layerOrder(icon);
+        // Listed layers first in the chosen order, the rest after them in traced order.
+        layers.sort(Comparator.comparingInt(layer -> order.contains(layer.color())
+                ? order.indexOf(layer.color()) : order.size()));
         return new IconPreview(previews, layers, sourcePreviewSvg(icon));
     }
 
@@ -367,22 +410,25 @@ public final class IconPackController {
         for (IconAsset icon : pack.icons()) {
             BackgroundSelection selection =
                     backgroundSelections.getOrDefault(icon, BackgroundSelection.EMPTY);
-            Set<String> hidden = pack.hiddenLayerColors(icon);
-            Map<String, String> colors = pack.layerColors(icon);
+            LayerEdits edits = layerEdits(icon);
             for (IconVariant variant : traceVariants(icon, selection)) {
-                variants.add(withLayerChanges(variant, hidden, colors));
+                variants.add(withLayerChanges(variant, edits));
             }
         }
         exportService.export(variants, pack.exportSettings(), destination, format);
     }
 
-    private static IconVariant withLayerChanges(
-            IconVariant variant, Set<String> hidden, Map<String, String> colors) throws IOException {
-        if (hidden.isEmpty() && colors.isEmpty()) {
+    private LayerEdits layerEdits(IconAsset icon) {
+        return new LayerEdits(pack.hiddenLayerColors(icon), pack.layerColors(icon), pack.layerNames(icon),
+                pack.layerOrder(icon));
+    }
+
+    private static IconVariant withLayerChanges(IconVariant variant, LayerEdits edits) throws IOException {
+        if (edits.isEmpty()) {
             return variant;
         }
         return new IconVariant(variant.iconName(), variant.variantName(),
-                SvgLayers.withLayerChanges(variant.svg(), hidden, colors));
+                SvgLayers.withLayerEdits(variant.svg(), edits));
     }
 
     private static void requireStrokeInside(IconAsset icon, EraseStroke stroke) {

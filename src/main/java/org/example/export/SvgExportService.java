@@ -38,13 +38,15 @@ import org.xml.sax.SAXParseException;
 
 public final class SvgExportService {
     private static final String SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+    private static final String XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
+    private static final String INKSCAPE_NAMESPACE = "http://www.inkscape.org/namespaces/inkscape";
 
     public String renderSvg(IconVariant icon, SvgExportSettings settings) throws IOException {
         if (icon == null || settings == null) {
             throw new IllegalArgumentException("Icon and export settings are required");
         }
         SourceSvg source = parseSource(icon.svg());
-        return individualSvg(source, settings, variantSlug(icon));
+        return individualSvg(source, settings, variantSlug(icon), null);
     }
 
     public void export(
@@ -64,6 +66,7 @@ public final class SvgExportService {
             case INDIVIDUAL_SVGS -> writeIndividualSvgs(prepared, destination);
             case SPRITE_SVG -> writeSprite(prepared, settings, destination);
             case ZIP -> writeZip(prepared, settings, destination);
+            case LAYER_SVGS -> writeLayerSvgs(prepared, settings, destination);
         }
     }
 
@@ -77,7 +80,7 @@ public final class SvgExportService {
             }
             SourceSvg source = parseSource(icon.svg());
             String uniqueName = uniqueName(variantSlug(icon), usedNames);
-            prepared.add(new PreparedIcon(uniqueName, source, individualSvg(source, settings, uniqueName)));
+            prepared.add(new PreparedIcon(uniqueName, source, individualSvg(source, settings, uniqueName, null)));
         }
         return List.copyOf(prepared);
     }
@@ -154,8 +157,9 @@ public final class SvgExportService {
         return builder;
     }
 
-    private static String individualSvg(SourceSvg source, SvgExportSettings settings, String idPrefix)
-            throws IOException {
+    /** The icon on its canvas; with {@code onlyColor}, only that layer, cut as in mosaic mode. */
+    private static String individualSvg(SourceSvg source, SvgExportSettings settings, String idPrefix,
+                                        String onlyColor) throws IOException {
         try {
             Document output = newDocument();
             Element root = output.createElementNS(SVG_NAMESPACE, "svg");
@@ -164,7 +168,7 @@ public final class SvgExportService {
             root.setAttribute("viewBox", "0 0 " + settings.width() + " " + settings.height());
             root.setAttribute("preserveAspectRatio", "xMidYMid meet");
             output.appendChild(root);
-            appendScaledSource(output, root, source, settings, idPrefix);
+            appendScaledSource(output, root, source, settings, idPrefix, onlyColor);
             return serialize(output);
         } catch (IOException exception) {
             throw exception;
@@ -173,8 +177,8 @@ public final class SvgExportService {
         }
     }
 
-    private static void appendScaledSource(
-            Document output, Element parent, SourceSvg source, SvgExportSettings settings, String idPrefix) {
+    private static void appendScaledSource(Document output, Element parent, SourceSvg source,
+                                           SvgExportSettings settings, String idPrefix, String onlyColor) {
         Element viewport = output.createElementNS(SVG_NAMESPACE, "svg");
         double scaledWidth = settings.width() * settings.scale();
         double scaledHeight = settings.height() * settings.scale();
@@ -215,29 +219,112 @@ public final class SvgExportService {
             }
         }
 
+        // A chosen layer order repaints the layers in that order; the sort is stable, so paths of
+        // one layer keep their own order.
+        List<Element> painted = new ArrayList<>();
+        for (Element path : paths) {
+            if (SvgLayers.visibleColor(path) != null) {
+                painted.add(path);
+            }
+        }
+        if (painted.stream().anyMatch(path -> path.hasAttribute(SvgLayers.LAYER_RANK))) {
+            painted.sort(java.util.Comparator.comparingInt(SvgExportService::layerRank));
+        }
+        if (settings.mosaic() || onlyColor != null) {
+            cutOutLaterLayers(painted, cutPaths);
+        }
+
         Map<String, Integer> groupCounts = new HashMap<>();
         Element group = null;
         String groupColor = null;
-        for (Element path : paths) {
+        for (Element path : painted) {
             String color = SvgLayers.visibleColor(path);
             Area cut = cutPaths.get(path);
-            if (color == null || (cut != null && cut.isEmpty())) {
+            if ((cut != null && cut.isEmpty()) || (onlyColor != null && !onlyColor.equals(color))) {
                 continue;
             }
             if (!color.equals(groupColor)) {
-                int count = groupCounts.merge(color, 1, Integer::sum);
+                String name = path.getAttribute(SvgLayers.LAYER_NAME);
+                String base = slug(name.isBlank() ? color : name);
+                int count = groupCounts.merge(base, 1, Integer::sum);
                 group = output.createElementNS(SVG_NAMESPACE, "g");
-                group.setAttribute("id", idPrefix + "-" + slug(color) + (count > 1 ? "-" + count : ""));
+                group.setAttribute("id", idPrefix + "-" + base + (count > 1 ? "-" + count : ""));
                 group.setAttribute("data-color", color);
+                if (!name.isBlank()) {
+                    output.getDocumentElement().setAttributeNS(XMLNS_NAMESPACE, "xmlns:inkscape", INKSCAPE_NAMESPACE);
+                    group.setAttributeNS(INKSCAPE_NAMESPACE, "inkscape:label", name);
+                    group.setAttributeNS(INKSCAPE_NAMESPACE, "inkscape:groupmode", "layer");
+                }
                 viewport.appendChild(group);
                 groupColor = color;
             }
             Element imported = (Element) output.importNode(path, true);
+            imported.removeAttribute(SvgLayers.LAYER_NAME);
+            imported.removeAttribute(SvgLayers.LAYER_RANK);
             if (cut != null) {
                 imported.setAttribute("d", SvgPathGeometry.format(cut));
                 imported.setAttribute("fill-rule", SvgPathGeometry.fillRule(cut));
             }
             group.appendChild(imported);
+        }
+    }
+
+    private static int layerRank(Element path) {
+        try {
+            return Integer.parseInt(path.getAttribute(SvgLayers.LAYER_RANK));
+        } catch (NumberFormatException exception) {
+            return Integer.MAX_VALUE;
+        }
+    }
+
+    /** Mosaic: subtracts from every path whatever is painted after it, so no two shapes overlap. */
+    private static void cutOutLaterLayers(List<Element> painted, Map<Element, Area> cutPaths) {
+        Area paintedAfter = new Area();
+        for (int index = painted.size() - 1; index >= 0; index--) {
+            Element path = painted.get(index);
+            Area area = cutPaths.get(path);
+            if (area == null) {
+                Optional<Path2D> shape = SvgPathGeometry.parse(path.getAttribute("d"));
+                if (shape.isEmpty()) {
+                    continue;
+                }
+                area = new Area(shape.get());
+            }
+            if (!paintedAfter.isEmpty()
+                    && SvgPathGeometry.intersects(area.getBounds2D(), paintedAfter.getBounds2D())) {
+                Area visible = new Area(area);
+                visible.subtract(paintedAfter);
+                cutPaths.put(path, visible);
+            }
+            paintedAfter.add(area);
+        }
+    }
+
+    /** Writes each layer of each icon to its own file, named after the layer. */
+    private static void writeLayerSvgs(List<PreparedIcon> icons, SvgExportSettings settings, Path directory)
+            throws IOException {
+        Files.createDirectories(directory);
+        Set<String> usedNames = new HashSet<>();
+        for (PreparedIcon icon : icons) {
+            Map<String, String> layers = new java.util.LinkedHashMap<>();
+            NodeList groups;
+            try {
+                groups = secureBuilder().parse(new InputSource(new StringReader(icon.svg())))
+                        .getElementsByTagNameNS(SVG_NAMESPACE, "g");
+            } catch (Exception exception) {
+                throw new IOException("Could not read the exported layers", exception);
+            }
+            for (int index = 0; index < groups.getLength(); index++) {
+                Element group = (Element) groups.item(index);
+                layers.putIfAbsent(group.getAttribute("data-color"),
+                        group.getAttributeNS(INKSCAPE_NAMESPACE, "label"));
+            }
+            for (Map.Entry<String, String> layer : layers.entrySet()) {
+                String label = layer.getValue().isBlank() ? layer.getKey() : layer.getValue();
+                String name = uniqueName(icon.name() + "-" + slug(label), usedNames);
+                Files.writeString(directory.resolve(name + ".svg"),
+                        individualSvg(icon.source(), settings, icon.name(), layer.getKey()), StandardCharsets.UTF_8);
+            }
         }
     }
 
@@ -274,7 +361,7 @@ public final class SvgExportService {
                 symbol.setAttribute("id", icon.name());
                 symbol.setAttribute("viewBox", "0 0 " + settings.width() + " " + settings.height());
                 definitions.appendChild(symbol);
-                appendScaledSource(output, symbol, icon.source(), settings, icon.name());
+                appendScaledSource(output, symbol, icon.source(), settings, icon.name(), null);
 
                 long column = index % columns;
                 long row = index / columns;

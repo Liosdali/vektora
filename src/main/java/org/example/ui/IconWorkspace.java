@@ -75,6 +75,7 @@ public final class IconWorkspace extends BorderPane {
     private final TextField widthField = new TextField("128");
     private final TextField heightField = new TextField("128");
     private final TextField scaleField = new TextField("1.0");
+    private final CheckBox mosaicBox = new CheckBox("Boşluksuz (mozaik) çizim");
     private final Button importButton = new Button("PNG/JPG ekle");
     private final Button undoButton = new Button("Geri al");
     private final Button redoButton = new Button("Yinele");
@@ -348,9 +349,21 @@ public final class IconWorkspace extends BorderPane {
         applySettings.setMaxWidth(Double.MAX_VALUE);
         applySettings.getStyleClass().add("secondary");
         applySettings.setOnAction(event -> applySettings());
+        mosaicBox.selectedProperty().addListener((observable, previous, selected) -> {
+            SvgExportSettings settings = controller.pack().exportSettings();
+            if (settings.mosaic() != selected) {
+                controller.setExportSettings(settings.withMosaic(selected));
+                markDirty();
+                refreshPreview(iconList.getSelectionModel().getSelectedItem());
+                status.setText(selected ? "Boşluksuz çizim: şekiller artık üst üste binmiyor."
+                        : "Katmanlar yeniden üst üste çiziliyor.");
+            }
+        });
         VBox canvas = new VBox(8, sectionTitle("Tuval"), mutedLabel("SVG tuval ölçüsü"),
                 new HBox(8, widthField, heightField), mutedLabel("İkon ölçeği"), scaleField,
-                mutedLabel("1.0 = tuvali doldurur · 0.5 = yarı boyut"), applySettings);
+                mutedLabel("1.0 = tuvali doldurur · 0.5 = yarı boyut"), applySettings, mosaicBox,
+                mutedLabel("Her katmandan üstüne çizilenleri keser; vinil kesim ve gravür için şekiller "
+                        + "üst üste binmez. Dosya biraz büyüyebilir."));
 
         settingsPane.getChildren().setAll(background, colors, canvas);
     }
@@ -434,7 +447,9 @@ public final class IconWorkspace extends BorderPane {
         sprite.setOnAction(event -> export(ExportFormat.SPRITE_SVG));
         MenuItem zip = new MenuItem("ZIP paketi…");
         zip.setOnAction(event -> export(ExportFormat.ZIP));
-        exportButton.getItems().setAll(individual, sprite, zip);
+        MenuItem layers = new MenuItem("Katmanları ayrı SVG…");
+        layers.setOnAction(event -> export(ExportFormat.LAYER_SVGS));
+        exportButton.getItems().setAll(individual, sprite, zip, new SeparatorMenuItem(), layers);
     }
 
     private void configureProjectMenu() {
@@ -575,6 +590,7 @@ public final class IconWorkspace extends BorderPane {
         widthField.setText(Integer.toString(settings.width()));
         heightField.setText(Integer.toString(settings.height()));
         scaleField.setText(Double.toString(settings.scale()));
+        mosaicBox.setSelected(settings.mosaic());
         paletteEditor.setPalettes(controller.pack().palettes());
         icons.setAll(controller.pack().icons());
         packageCount.setText(icons.size() + " ikon");
@@ -702,9 +718,11 @@ public final class IconWorkspace extends BorderPane {
 
     private Path chooseExportDestination(ExportFormat format) {
         Window window = getWindow();
-        if (format == ExportFormat.INDIVIDUAL_SVGS) {
+        if (format == ExportFormat.INDIVIDUAL_SVGS || format == ExportFormat.LAYER_SVGS) {
             DirectoryChooser chooser = new DirectoryChooser();
-            chooser.setTitle("SVG dosyalarının kaydedileceği klasörü seç");
+            chooser.setTitle(format == ExportFormat.LAYER_SVGS
+                    ? "Katman SVG'lerinin kaydedileceği klasörü seç"
+                    : "SVG dosyalarının kaydedileceği klasörü seç");
             File directory = chooser.showDialog(window);
             return directory == null ? null : directory.toPath();
         }
@@ -723,7 +741,7 @@ public final class IconWorkspace extends BorderPane {
             SvgExportSettings settings = new SvgExportSettings(
                     Integer.parseInt(widthField.getText().trim()),
                     Integer.parseInt(heightField.getText().trim()),
-                    Double.parseDouble(scaleField.getText().trim()));
+                    Double.parseDouble(scaleField.getText().trim()), mosaicBox.isSelected());
             controller.setExportSettings(settings);
             markDirty();
             status.setText("SVG tuval ölçüsü ve ölçeği güncellendi.");
@@ -805,7 +823,7 @@ public final class IconWorkspace extends BorderPane {
         if (icon == null) {
             previewPane.showVariants(List.of());
             previewPane.hideAdvice();
-            layerList.showLayers(List.of(), Set.of(), Map.of(), (color, hidden) -> { }, (color, next) -> { });
+            layerList.showLayers(List.of(), Set.of(), Map.of(), Map.of(), LayerListPane.NO_ACTIONS);
             exportButton.setDisable(icons.isEmpty());
             return;
         }
@@ -820,14 +838,52 @@ public final class IconWorkspace extends BorderPane {
                     && iconList.getSelectionModel().getSelectedItem() == icon) {
                 previewPane.showVariants(preview.variants(), preview.sourceSvg());
                 layerList.showLayers(preview.layers(), controller.hiddenLayerColors(icon),
-                        controller.layerColors(icon), (color, hidden) -> toggleLayer(icon, color, hidden),
-                        (color, replacement) -> recolorLayer(icon, color, replacement));
+                        controller.layerColors(icon), controller.layerNames(icon), layerActions(icon));
                 status.setText(preview.layers().size() + " katmanlı vektör önizlemesi hazır.");
                 controller.colorReductionAdvice(preview.layers().size()).ifPresentOrElse(
                         advice -> previewPane.showAdvice(advice, "8 renge indir", this::applyRecommendedColors),
                         previewPane::hideAdvice);
             }
         }, "Vektör önizlemesi hazırlanıyor…", () -> previewRequests.isCurrent(request));
+    }
+
+    private LayerListPane.Actions layerActions(IconAsset icon) {
+        return new LayerListPane.Actions() {
+            @Override
+            public void toggle(String color, boolean hidden) {
+                toggleLayer(icon, color, hidden);
+            }
+
+            @Override
+            public void recolor(String color, String replacement) {
+                recolorLayer(icon, color, replacement);
+            }
+
+            @Override
+            public void rename(String color, String name) {
+                controller.setLayerName(icon, color, name);
+                layerEdited(icon, name == null ? color.toUpperCase() + " katmanının adı silindi."
+                        : color.toUpperCase() + " katmanı \"" + name.strip() + "\" olarak adlandırıldı.");
+            }
+
+            @Override
+            public void reorder(List<String> colors) {
+                controller.setLayerOrder(icon, colors);
+                layerEdited(icon, "Katman sırası değişti; üst üste binen yerlerin görünüşü değişebilir.");
+            }
+
+            @Override
+            public void merge(String color, String into) {
+                controller.mergeLayer(icon, color, into);
+                layerEdited(icon, color.toUpperCase() + " katmanı " + into.toUpperCase() + " ile birleştirildi.");
+            }
+        };
+    }
+
+    private void layerEdited(IconAsset icon, String message) {
+        markDirty();
+        refreshPreview(icon);
+        status.setText(message);
     }
 
     private void toggleLayer(IconAsset icon, String color, boolean hidden) {

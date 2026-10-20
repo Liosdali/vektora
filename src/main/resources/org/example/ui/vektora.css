@@ -387,3 +387,20 @@
 .advice-strip .label {
     -fx-text-fill: #fde68a;
 }
+
+.layer-name {
+    -fx-font-weight: 600;
+}
+
+.layer-menu {
+    -fx-padding: 2 6 2 6;
+}
+
+.layer-menu > .arrow-button {
+    -fx-padding: 0;
+}
+
+.layer-menu > .arrow-button > .arrow {
+    -fx-padding: 0;
+    -fx-shape: null;
+}
