@@ -20,8 +20,21 @@ public final class BackgroundRegionProcessor {
     }
 
     public static BufferedImage removeSelection(BufferedImage source, BackgroundSelection selection) {
+        return removeSelection(source, selection, null);
+    }
+
+    /**
+     * Applies the selection. When it keeps only the subject and {@code subjectMask} is given, every
+     * visible pixel the mask marks as background is removed like a selected region.
+     */
+    public static BufferedImage removeSelection(
+            BufferedImage source, BackgroundSelection selection, SubjectMask subjectMask) {
         Objects.requireNonNull(source, "Source image is required");
         Objects.requireNonNull(selection, "Background selection is required");
+        if (subjectMask != null
+                && (subjectMask.width() != source.getWidth() || subjectMask.height() != source.getHeight())) {
+            throw new IllegalArgumentException("Subject mask must match the source image size");
+        }
 
         int width = source.getWidth();
         int height = source.getHeight();
@@ -35,6 +48,13 @@ public final class BackgroundRegionProcessor {
             }
             collectConnectedRegion(source, seed.x(), seed.y(), seedPixel, removed, false,
                     selection.tolerance());
+        }
+        if (selection.keepSubjectOnly() && subjectMask != null) {
+            for (int index = 0; index < removed.length; index++) {
+                if (!subjectMask.isSubject(index) && (source.getRGB(index % width, index / width) >>> 24) != 0) {
+                    removed[index] = true;
+                }
+            }
         }
         boolean[] regionRemoved = removed.clone();
         for (EraseStroke stroke : selection.strokes()) {

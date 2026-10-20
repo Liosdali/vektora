@@ -24,6 +24,10 @@ import javafx.stage.Window;
 import org.example.export.ExportFormat;
 import org.example.export.SvgExportSettings;
 import org.example.model.IconAsset;
+import org.example.segmentation.ModelStore;
+import org.example.segmentation.OnnxSubjectSegmenter;
+import org.example.segmentation.SegmentationException;
+import org.example.segmentation.SegmentationModel;
 import org.example.vector.BackgroundSelection;
 import org.example.vector.TraceOptions;
 import org.example.vector.VectorizationException;
@@ -32,6 +36,7 @@ import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.EnumMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -59,7 +64,12 @@ public final class IconWorkspace extends BorderPane {
     private final TextField scaleField = new TextField("1.0");
     private final Button importButton = new Button("PNG/JPG ekle");
     private final Button undoButton = new Button("Geri al");
-    private final Button selectBackgroundButton = new Button("Arka planı ayır");
+    private final Button selectBackgroundButton = new Button("Elle seç ve düzelt");
+    private final Button detectSubjectButton = new Button("Konuyu otomatik bul");
+    private final ComboBox<SegmentationModel> subjectModel = new ComboBox<>();
+    private final CheckBox keepSubjectBox = new CheckBox("Yalnızca konuyu koru");
+    private final ModelStore modelStore = ModelStore.inUserHome();
+    private final Map<SegmentationModel, OnnxSubjectSegmenter> segmenters = new EnumMap<>(SegmentationModel.class);
     private final Button showSvgPreviewButton = new Button("SVG önizlemesine dön");
     private final Button clearBackgroundButton = new Button("Seçimleri temizle");
     private final Slider toleranceSlider = new Slider(0, BackgroundSelection.MAX_TOLERANCE,
@@ -189,20 +199,27 @@ public final class IconWorkspace extends BorderPane {
 
     private void buildSettingsPane() {
         VBox background = section(sectionTitle("Arka plan"),
-                mutedLabel("Kenarlardaki düz zemin otomatik silinir. İç zeminleri buradan seç."));
-        for (Button button : List.of(showSvgPreviewButton, clearBackgroundButton)) {
+                mutedLabel("Kenarlardaki düz zemin otomatik silinir. Konuyu modelle bulabilir ya da "
+                        + "bölgeleri elle seçebilirsin."));
+        for (Button button : List.of(selectBackgroundButton, showSvgPreviewButton, clearBackgroundButton)) {
             button.setMaxWidth(Double.MAX_VALUE);
             button.getStyleClass().add("secondary");
         }
-        selectBackgroundButton.setMaxWidth(Double.MAX_VALUE);
-        selectBackgroundButton.getStyleClass().add("primary");
+        detectSubjectButton.setMaxWidth(Double.MAX_VALUE);
+        detectSubjectButton.getStyleClass().add("primary");
+        subjectModel.getItems().setAll(SegmentationModel.values());
+        subjectModel.getSelectionModel().selectFirst();
+        subjectModel.setMaxWidth(Double.MAX_VALUE);
+        subjectModel.setAccessibleText("Konu ayırma modeli");
         Label toleranceLabel = new Label("Renk toleransı");
         Region toleranceSpacer = new Region();
         HBox.setHgrow(toleranceSpacer, Priority.ALWAYS);
         toleranceValue.getStyleClass().add("value-label");
         HBox toleranceHeader = new HBox(toleranceLabel, toleranceSpacer, toleranceValue);
         defringeBox.setSelected(true);
-        background.getChildren().addAll(selectBackgroundButton, showSvgPreviewButton,
+        background.getChildren().addAll(detectSubjectButton, subjectModel,
+                mutedLabel("Yerel model: görselin bilgisayardan çıkmaz. Model ilk kullanımda bir kez indirilir."),
+                keepSubjectBox, new Separator(), selectBackgroundButton, showSvgPreviewButton,
                 toleranceHeader, toleranceSlider,
                 mutedLabel("Yüksek değer, tıklanan renge daha uzak tonları da siler."),
                 defringeBox,
@@ -252,6 +269,14 @@ public final class IconWorkspace extends BorderPane {
 
     private void configureControls() {
         selectBackgroundButton.setOnAction(event -> showBackgroundPicker());
+        detectSubjectButton.setOnAction(event -> detectSubject());
+        keepSubjectBox.selectedProperty().addListener((observable, oldValue, selected) -> {
+            IconAsset icon = iconList.getSelectionModel().getSelectedItem();
+            if (icon != null && !syncingBackgroundControls && controller.hasSubjectMask(icon)) {
+                controller.setKeepSubjectOnly(icon, selected);
+                backgroundChanged(icon, selected ? "Yalnızca konu korunuyor." : "Konu maskesi kapatıldı.");
+            }
+        });
         showSvgPreviewButton.setOnAction(event -> showSvgPreview());
         clearBackgroundButton.setOnAction(event -> clearBackgroundSelections());
         toleranceSlider.valueProperty().addListener((observable, oldValue, newValue) -> {
@@ -532,6 +557,55 @@ public final class IconWorkspace extends BorderPane {
         status.setText(message);
     }
 
+    private void detectSubject() {
+        IconAsset icon = iconList.getSelectionModel().getSelectedItem();
+        SegmentationModel model = subjectModel.getValue();
+        if (icon == null || model == null) {
+            return;
+        }
+        if (!modelStore.isInstalled(model.spec())) {
+            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+            confirm.initOwner(getWindow());
+            confirm.setTitle("Model indirilsin mi?");
+            confirm.setHeaderText(model + " modeli bir kez indirilecek");
+            confirm.setContentText("Kaynak: github.com/danielgatis/rembg\nKonum: " + modelStore.path(model.spec())
+                    + "\n\nYalnızca model dosyası indirilir ve SHA-256 ile doğrulanır. "
+                    + "Görsellerin bilgisayarından çıkmaz.");
+            if (confirm.showAndWait().filter(ButtonType.OK::equals).isEmpty()) {
+                return;
+            }
+        }
+        Task<Void> task = new Task<>() {
+            @Override
+            protected Void call() throws Exception {
+                Path file = modelStore.install(model.spec(), (done, total) -> updateMessage(String.format(
+                        "Model indiriliyor… %d / %d MB", done >> 20, total >> 20)));
+                updateMessage("Konu ayrılıyor…");
+                controller.detectSubject(icon, segmenter(model, file));
+                return null;
+            }
+        };
+        task.messageProperty().addListener((observable, oldMessage, message) -> {
+            if (message != null && !message.isBlank()) {
+                status.setText(message);
+            }
+        });
+        detectSubjectButton.setDisable(true);
+        runTask(task, ignored -> backgroundChanged(icon,
+                "Konu ayrıldı; geri kalanı silinecek. Ctrl+Z ile geri alınabilir."), "Konu ayırma hazırlanıyor…");
+    }
+
+    private OnnxSubjectSegmenter segmenter(SegmentationModel model, Path file) throws SegmentationException {
+        synchronized (segmenters) {
+            OnnxSubjectSegmenter segmenter = segmenters.get(model);
+            if (segmenter == null) {
+                segmenter = new OnnxSubjectSegmenter(model, file);
+                segmenters.put(model, segmenter);
+            }
+            return segmenter;
+        }
+    }
+
     private void undoBackgroundEdit() {
         IconAsset icon = iconList.getSelectionModel().getSelectedItem();
         if (icon != null && controller.undoBackgroundEdit(icon)) {
@@ -557,10 +631,13 @@ public final class IconWorkspace extends BorderPane {
         undoButton.setDisable(!hasIcon || !controller.canUndoBackgroundEdit(icon));
         toleranceSlider.setDisable(!hasIcon);
         defringeBox.setDisable(!hasIcon);
+        detectSubjectButton.setDisable(!hasIcon);
+        keepSubjectBox.setDisable(!hasIcon || !controller.hasSubjectMask(icon));
         syncingBackgroundControls = true;
         try {
             toleranceSlider.setValue(selection.tolerance());
             defringeBox.setSelected(selection.defringe());
+            keepSubjectBox.setSelected(selection.keepSubjectOnly());
         } finally {
             syncingBackgroundControls = false;
         }
@@ -581,6 +658,7 @@ public final class IconWorkspace extends BorderPane {
         status.setText(busyMessage);
         task.setOnSucceeded(event -> {
             progress.setVisible(false);
+            detectSubjectButton.setDisable(iconList.getSelectionModel().getSelectedItem() == null);
             importButton.setDisable(false);
             exportButton.setDisable(icons.isEmpty());
             if (completionIsCurrent.getAsBoolean()) {
@@ -589,6 +667,7 @@ public final class IconWorkspace extends BorderPane {
         });
         task.setOnFailed(event -> {
             progress.setVisible(false);
+            detectSubjectButton.setDisable(iconList.getSelectionModel().getSelectedItem() == null);
             importButton.setDisable(false);
             exportButton.setDisable(icons.isEmpty());
             if (!completionIsCurrent.getAsBoolean()) {

@@ -310,6 +310,34 @@ class IconPackControllerTest {
         assertTrue(controller.suggestedRegions(icon).stream().noneMatch(region -> region.rgb() == green));
     }
 
+    @Test
+    void detectedSubjectKeepsOnlyTheSubjectAndCanBeUndone(@TempDir Path directory) throws Exception {
+        Path source = writePng(directory.resolve("sun.png"), Color.ORANGE);
+        IconPackController controller = controller();
+        controller.addImages(List.of(source));
+        IconAsset icon = controller.pack().icons().getFirst();
+        byte[] foreground = new byte[64];
+        for (int y = 2; y < 6; y++) {
+            for (int x = 2; x < 6; x++) {
+                foreground[y * 8 + x] = (byte) 255;
+            }
+        }
+
+        assertFalse(controller.hasSubjectMask(icon));
+        assertThrows(IllegalStateException.class, () -> controller.setKeepSubjectOnly(icon, true));
+        controller.detectSubject(icon, image -> new org.example.vector.SubjectMask(8, 8, foreground));
+
+        assertTrue(controller.hasSubjectMask(icon));
+        assertTrue(controller.backgroundSelection(icon).keepSubjectOnly());
+        assertEquals(0, controller.processedSource(icon).getRGB(1, 1) >>> 24);
+        assertEquals(255, controller.processedSource(icon).getRGB(3, 3) >>> 24);
+
+        assertTrue(controller.undoBackgroundEdit(icon));
+        assertFalse(controller.backgroundSelection(icon).keepSubjectOnly());
+        assertEquals(255, controller.processedSource(icon).getRGB(1, 1) >>> 24);
+        assertTrue(controller.hasSubjectMask(icon));
+    }
+
     private static IconPackController controller() {
         return new IconPackController(new IconPack(), new ImageTracerVectorizer(), new SvgExportService());
     }

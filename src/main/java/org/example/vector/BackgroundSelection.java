@@ -9,7 +9,8 @@ public record BackgroundSelection(
         List<EraseStroke> strokes,
         List<EraseStroke> protectStrokes,
         int tolerance,
-        boolean defringe) {
+        boolean defringe,
+        boolean keepSubjectOnly) {
     public static final int DEFAULT_TOLERANCE = 24;
     public static final int MAX_TOLERANCE = 128;
     public static final BackgroundSelection EMPTY = new BackgroundSelection(List.of(), List.of());
@@ -24,35 +25,43 @@ public record BackgroundSelection(
     }
 
     public BackgroundSelection(List<PixelCoordinate> seeds, List<EraseStroke> strokes) {
-        this(seeds, strokes, List.of(), DEFAULT_TOLERANCE, true);
+        this(seeds, strokes, List.of(), DEFAULT_TOLERANCE, true, false);
     }
 
     public boolean hasEdits() {
-        return !seeds.isEmpty() || !strokes.isEmpty() || !protectStrokes.isEmpty();
+        return !seeds.isEmpty() || !strokes.isEmpty() || !protectStrokes.isEmpty() || keepSubjectOnly;
     }
 
     public BackgroundSelection withSeed(PixelCoordinate seed) {
-        return new BackgroundSelection(append(seeds, seed), strokes, protectStrokes, tolerance, defringe);
+        return new BackgroundSelection(append(seeds, seed), strokes, protectStrokes, tolerance, defringe,
+                keepSubjectOnly);
     }
 
     public BackgroundSelection withStroke(EraseStroke stroke) {
-        return new BackgroundSelection(seeds, append(strokes, stroke), protectStrokes, tolerance, defringe);
+        return new BackgroundSelection(seeds, append(strokes, stroke), protectStrokes, tolerance, defringe,
+                keepSubjectOnly);
     }
 
     public BackgroundSelection withProtectStroke(EraseStroke stroke) {
-        return new BackgroundSelection(seeds, strokes, append(protectStrokes, stroke), tolerance, defringe);
+        return new BackgroundSelection(seeds, strokes, append(protectStrokes, stroke), tolerance, defringe,
+                keepSubjectOnly);
     }
 
     public BackgroundSelection withTolerance(int value) {
-        return new BackgroundSelection(seeds, strokes, protectStrokes, value, defringe);
+        return new BackgroundSelection(seeds, strokes, protectStrokes, value, defringe, keepSubjectOnly);
     }
 
     public BackgroundSelection withDefringe(boolean value) {
-        return new BackgroundSelection(seeds, strokes, protectStrokes, tolerance, value);
+        return new BackgroundSelection(seeds, strokes, protectStrokes, tolerance, value, keepSubjectOnly);
+    }
+
+    /** Removes everything a subject mask marks as background, on top of the other edits. */
+    public BackgroundSelection withKeepSubjectOnly(boolean value) {
+        return new BackgroundSelection(seeds, strokes, protectStrokes, tolerance, defringe, value);
     }
 
     public BackgroundSelection withoutEdits() {
-        return new BackgroundSelection(List.of(), List.of(), List.of(), tolerance, defringe);
+        return new BackgroundSelection(List.of(), List.of(), List.of(), tolerance, defringe, false);
     }
 
     private static <T> List<T> append(List<T> values, T value) {

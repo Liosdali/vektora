@@ -4,6 +4,7 @@ import org.example.export.SvgExportSettings;
 import org.example.vector.BackgroundSelection;
 import org.example.vector.EraseStroke;
 import org.example.vector.PixelCoordinate;
+import org.example.vector.SubjectMask;
 import org.example.vector.TraceOptions;
 
 import java.awt.*;
@@ -18,6 +19,7 @@ public final class IconPack {
     private final Map<IconAsset, BackgroundSelection> backgroundSelections = new IdentityHashMap<>();
     private final Map<IconAsset, Deque<BackgroundSelection>> backgroundHistory = new IdentityHashMap<>();
     private final Map<IconAsset, Set<String>> hiddenLayerColors = new IdentityHashMap<>();
+    private final Map<IconAsset, SubjectMask> subjectMasks = new IdentityHashMap<>();
     private TraceOptions traceOptions = TraceOptions.preserveSourceColors();
     private SvgExportSettings exportSettings = new SvgExportSettings(128, 128, 1);
     private List<List<Color>> palettes = List.of();
@@ -92,8 +94,22 @@ public final class IconPack {
         BackgroundSelection previous = history.pop();
         // Undo restores the removal edits; tolerance and defringe stay as the user last set them.
         backgroundSelections.put(icon, new BackgroundSelection(previous.seeds(), previous.strokes(),
-                previous.protectStrokes(), current.tolerance(), current.defringe()));
+                previous.protectStrokes(), current.tolerance(), current.defringe(), previous.keepSubjectOnly()));
         return true;
+    }
+
+    public synchronized void setKeepSubjectOnly(IconAsset icon, boolean keep) {
+        if (backgroundSelection(icon).keepSubjectOnly() != keep) {
+            editBackground(icon, selection -> selection.withKeepSubjectOnly(keep));
+        }
+    }
+
+    public synchronized void setSubjectMask(IconAsset icon, SubjectMask mask) {
+        subjectMasks.put(icon, mask);
+    }
+
+    public synchronized SubjectMask subjectMask(IconAsset icon) {
+        return subjectMasks.get(icon);
     }
 
     public synchronized BackgroundSelection backgroundSelection(IconAsset icon) {

@@ -224,6 +224,29 @@ class BackgroundRegionProcessorTest {
         assertEquals(List.of(), BackgroundRegionProcessor.suggestRegions(image(4, 4), 24, 5, 0.01));
     }
 
+    @Test
+    void keepSubjectOnlyRemovesWhatTheMaskCallsBackgroundUnlessProtected() {
+        BufferedImage source = image(4, 1);
+        fill(source, 0, 0, 4, 1, Color.RED);
+        SubjectMask mask = new SubjectMask(4, 1, new byte[] {0, (byte) 200, (byte) 255, 10});
+        BackgroundSelection keep = BackgroundSelection.EMPTY.withKeepSubjectOnly(true).withDefringe(false);
+
+        BufferedImage result = BackgroundRegionProcessor.removeSelection(source,
+                keep.withProtectStroke(new EraseStroke(List.of(new PixelCoordinate(3, 0)), 1)), mask);
+
+        assertEquals(0, alpha(result, 0, 0));
+        assertEquals(255, alpha(result, 1, 0));
+        assertEquals(255, alpha(result, 2, 0));
+        assertEquals(255, alpha(result, 3, 0));
+        assertEquals(255, alpha(BackgroundRegionProcessor.removeSelection(source, BackgroundSelection.EMPTY, mask), 0, 0));
+    }
+
+    @Test
+    void rejectsASubjectMaskOfAnotherSize() {
+        assertThrows(IllegalArgumentException.class, () -> BackgroundRegionProcessor.removeSelection(
+                image(2, 2), BackgroundSelection.EMPTY, new SubjectMask(1, 1, new byte[1])));
+    }
+
     private static final Color YELLOW = new Color(233, 185, 73);
     private static final Color NAVY = new Color(30, 42, 68);
 

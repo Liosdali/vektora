@@ -14,6 +14,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>5.10.2</junit.version>
         <javafx.version>22.0.2</javafx.version>
+        <!-- 1.21+ needs a newer MSVC runtime than the one JDKs ship (e.g. JDK 24: 14.36) and fails to load. -->
+        <onnxruntime.version>1.20.0</onnxruntime.version>
     </properties>
 
     <dependencies>
@@ -31,6 +33,11 @@
             <groupId>org.example.thirdparty</groupId>
             <artifactId>imagetracerjava</artifactId>
             <version>1.1.2</version>
+        </dependency>
+        <dependency>
+            <groupId>com.microsoft.onnxruntime</groupId>
+            <artifactId>onnxruntime</artifactId>
+            <version>${onnxruntime.version}</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>

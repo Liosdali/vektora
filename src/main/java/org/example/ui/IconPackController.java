@@ -8,6 +8,8 @@ import org.example.export.SvgLayer;
 import org.example.export.SvgLayers;
 import org.example.model.IconAsset;
 import org.example.model.IconPack;
+import org.example.segmentation.SegmentationException;
+import org.example.segmentation.SubjectSegmenter;
 import org.example.vector.*;
 
 import javax.imageio.ImageIO;
@@ -128,6 +130,33 @@ public final class IconPackController {
         pack.addProtectStroke(icon, stroke);
     }
 
+    /**
+     * Runs the segmenter on the icon (slow; call off the UI thread), stores its mask and switches
+     * the icon to keeping only the subject. The switch is one undoable edit.
+     */
+    public void detectSubject(IconAsset icon, SubjectSegmenter segmenter) throws SegmentationException {
+        requireOwnedIcon(icon);
+        SubjectMask mask = Objects.requireNonNull(segmenter, "Segmenter is required").segment(icon.image());
+        if (mask.width() != icon.image().getWidth() || mask.height() != icon.image().getHeight()) {
+            throw new SegmentationException("Konu maskesi görselle aynı boyutta değil");
+        }
+        pack.setSubjectMask(icon, mask);
+        pack.setKeepSubjectOnly(icon, true);
+    }
+
+    public boolean hasSubjectMask(IconAsset icon) {
+        requireOwnedIcon(icon);
+        return pack.subjectMask(icon) != null;
+    }
+
+    public void setKeepSubjectOnly(IconAsset icon, boolean keep) {
+        requireOwnedIcon(icon);
+        if (keep && pack.subjectMask(icon) == null) {
+            throw new IllegalStateException("Run subject detection before keeping only the subject");
+        }
+        pack.setKeepSubjectOnly(icon, keep);
+    }
+
     public BackgroundSelection backgroundSelection(IconAsset icon) {
         requireOwnedIcon(icon);
         return pack.backgroundSelection(icon);
@@ -159,8 +188,8 @@ public final class IconPackController {
     /** The source image after manual and automatic background removal, as the tracer will see it. */
     public BufferedImage processedSource(IconAsset icon) {
         requireOwnedIcon(icon);
-        return BackgroundRegionProcessor.removeBorderBackground(
-                BackgroundRegionProcessor.removeSelection(icon.image(), pack.backgroundSelection(icon)));
+        return BackgroundRegionProcessor.removeBorderBackground(BackgroundRegionProcessor.removeSelection(
+                icon.image(), pack.backgroundSelection(icon), pack.subjectMask(icon)));
     }
 
     /** Large regions still visible after the current removals, likely candidates to remove next. */
@@ -260,7 +289,8 @@ public final class IconPackController {
 
     private List<IconVariant> traceVariants(IconAsset icon, BackgroundSelection selection)
             throws VectorizationException {
-        BufferedImage image = BackgroundRegionProcessor.removeSelection(icon.image(), selection);
+        BufferedImage image = BackgroundRegionProcessor.removeSelection(
+                icon.image(), selection, pack.subjectMask(icon));
         List<List<Color>> palettes = pack.palettes();
         if (pack.traceOptions().mode() == TraceOptions.ColorMode.CUSTOM_PALETTE && !palettes.isEmpty()) {
             List<IconVariant> variants = new ArrayList<>(palettes.size());

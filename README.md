@@ -38,7 +38,16 @@ SVG çıktısı piksel çözünürlüğünden bağımsızdır; genişlik, yükse
 
 Vektörleştirme, şeffaf kenar boşluklarını kırpar ve kenarlarda baskın olan düz arka plan rengini (yakın tonlarıyla birlikte) şeffaflaştırır. Tek renkli özel palet, şeffaf arka planı koruyarak yalnızca çizimi renklendirir.
 
-Rozet veya ikon içindeki kapalı arka plan alanlarını temizlemek için ikonu seçip **Arka planı ayır** düğmesine tıkla.
+**Konuyu otomatik bul**, fotoğraf, degrade veya dokulu zeminler gibi düz renkle silinemeyen arka planlar içindir.
+Düğme bir konu ayırma modelini bilgisayarında çalıştırır ve konunun dışında kalan her şeyi siler. Seçim ekranında
+silinecek alanlar kırmızıyla görünür. Koru fırçası, elle silme ve **Geri al** bu sonucun üzerinde de çalışır.
+**Yalnızca konuyu koru** kutusu, modeli yeniden çalıştırmadan sonucu kapatıp açar. İki model vardır:
+**Hızlı · U²-Net-p** (4,4 MB) ve **Kaliteli · ISNet** (170 MB). Seçilen model ilk kullanımda, onay verdikten sonra
+bir kez `~/.vektora/models` klasörüne indirilir ve boyutu ile SHA-256 özeti doğrulanır. Görseller bilgisayardan
+çıkmaz. Model kaynakları ve lisansları `src/main/resources/META-INF/third-party/segmentation-models-NOTICE.txt`
+dosyasındadır.
+
+Rozet veya ikon içindeki kapalı arka plan alanlarını temizlemek için ikonu seçip **Elle seç ve düzelt** düğmesine tıkla.
 Seçim ekranında üç araç vardır:
 
 - **Bölge seç:** Tıkladığın pikselle bağlantılı, rengi **Renk toleransı** sınırında kalan alan silinir. Kopuk ama aynı
