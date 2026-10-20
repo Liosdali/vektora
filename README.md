@@ -37,7 +37,9 @@ mvn test
 
 Sprite dosyası açıldığında ikonları bir ızgarada gösterir; aynı zamanda her ikon `<symbol>` olarak tanımlı ve `<use href="ikon-sprite.svg#ikon-adi-varyant">` ile yeniden kullanılabilir.
 
-SVG çıktısı piksel çözünürlüğünden bağımsızdır; genişlik, yükseklik ve ölçek değerleri SVG tuvaline ve `viewBox`'a uygulanır. PNG dışa aktarımı bu uygulamanın kapsamında değildir.
+SVG çıktısı piksel çözünürlüğünden bağımsızdır; genişlik, yükseklik ve ölçek değerleri SVG tuvaline ve `viewBox`'a uygulanır.
+
+Aynı menüde raster çıktılar da vardır: **Saydam PNG** her ikonu tuval ölçüsünün 1, 2 ve 4 katında (`ikon.png`, `ikon@2x.png`, `ikon@4x.png`) yazar; **Favicon ve uygulama ikonları** 16–512 piksel kare PNG'ler ile 16/32/48 piksellik bir `ikon.ico` üretir. **Katmanları ayrı SVG** her rengi yalnızca o renkte görünen alanla ayrı bir dosyaya yazar (baskı ve kesim plotter'ları için). Tuval bölümündeki **SVG'yi küçült** ortak öznitelikleri katman grubuna taşır, bitişik yolları birleştirir ve koordinatları yuvarlar; görünüş değişmeden dosya genellikle %40–70 küçülür. **Boşluksuz (mozaik) çizim** şekillerin üst üste binmediği bir SVG verir. PDF/EPS çıktısı henüz yoktur.
 
 Vektörleştirme, şeffaf kenar boşluklarını kırpar ve kenarlarda baskın olan düz arka plan rengini (yakın tonlarıyla birlikte) şeffaflaştırır. Tek renkli özel palet, şeffaf arka planı koruyarak yalnızca çizimi renklendirir.
 

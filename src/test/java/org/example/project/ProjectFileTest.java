@@ -55,7 +55,7 @@ class ProjectFileTest {
         original.detectSubject(moon, image -> new SubjectMask(48, 48, maskValues));
         original.setSubjectFrame(moon, new Rectangle(4, 4, 40, 40));
         original.setTraceOptions(new TraceOptions(TraceOptions.ColorMode.REDUCE_SOURCE, 6, List.of(), 2));
-        original.setExportSettings(new SvgExportSettings(96, 64, 0.8, true));
+        original.setExportSettings(new SvgExportSettings(96, 64, 0.8, true, true, 1));
         original.setPalettes(List.of(List.of(Color.RED, new Color(10, 20, 30, 128))));
         String sunLayer = original.previewWithLayers(sun).layers().getFirst().color();
         original.setLayerColor(sun, sunLayer, "#c8f25c");

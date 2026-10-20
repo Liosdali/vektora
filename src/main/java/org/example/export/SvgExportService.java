@@ -40,6 +40,13 @@ public final class SvgExportService {
     private static final String SVG_NAMESPACE = "http://www.w3.org/2000/svg";
     private static final String XMLNS_NAMESPACE = "http://www.w3.org/2000/xmlns/";
     private static final String INKSCAPE_NAMESPACE = "http://www.inkscape.org/namespaces/inkscape";
+    private static final int[] PNG_FACTORS = {1, 2, 4};
+    private static final int[] ICON_SIZES = {16, 32, 48, 64, 128, 180, 192, 256, 512};
+    private static final int[] FAVICON_SIZES = {16, 32, 48};
+    /** Path attributes that compact output moves to the layer group when every path agrees. */
+    private static final List<String> SHARED_ATTRIBUTES = List.of("fill", "stroke", "stroke-width", "fill-rule");
+    private static final java.util.regex.Pattern NUMBER =
+            java.util.regex.Pattern.compile("-?(?:\\d+\\.?\\d*|\\.\\d+)(?:[eE][-+]?\\d+)?");
 
     public String renderSvg(IconVariant icon, SvgExportSettings settings) throws IOException {
         if (icon == null || settings == null) {
@@ -67,6 +74,8 @@ public final class SvgExportService {
             case SPRITE_SVG -> writeSprite(prepared, settings, destination);
             case ZIP -> writeZip(prepared, settings, destination);
             case LAYER_SVGS -> writeLayerSvgs(prepared, settings, destination);
+            case PNG -> writePngs(prepared, destination);
+            case ICON_SET -> writeIconSets(prepared, settings, destination);
         }
     }
 
@@ -235,6 +244,7 @@ public final class SvgExportService {
         }
 
         Map<String, Integer> groupCounts = new HashMap<>();
+        List<Element> groups = new ArrayList<>();
         Element group = null;
         String groupColor = null;
         for (Element path : painted) {
@@ -256,6 +266,7 @@ public final class SvgExportService {
                     group.setAttributeNS(INKSCAPE_NAMESPACE, "inkscape:groupmode", "layer");
                 }
                 viewport.appendChild(group);
+                groups.add(group);
                 groupColor = color;
             }
             Element imported = (Element) output.importNode(path, true);
@@ -267,6 +278,162 @@ public final class SvgExportService {
             }
             group.appendChild(imported);
         }
+        if (settings.compact()) {
+            groups.forEach(each -> compact(each, settings.decimals()));
+        }
+    }
+
+    /**
+     * Shrinks a layer group without changing how it looks: drops ImageTracer's debug
+     * {@code desc} and default opacity, moves attributes every path shares to the group and joins
+     * neighboring paths whose bounds stay apart (overlapping subpaths could cancel out when their
+     * windings differ, so those stay separate).
+     */
+    private static void compact(Element group, int decimals) {
+        List<Element> paths = new ArrayList<>();
+        for (org.w3c.dom.Node node = group.getFirstChild(); node != null; node = node.getNextSibling()) {
+            if (node instanceof Element element && "path".equals(element.getLocalName())) {
+                paths.add(element);
+            }
+        }
+        if (paths.isEmpty()) {
+            return;
+        }
+        for (Element path : paths) {
+            path.removeAttribute("desc");
+            String opacity = path.getAttribute("opacity").trim();
+            if (opacity.equals("1") || opacity.equals("1.0")) {
+                path.removeAttribute("opacity");
+            }
+        }
+        for (String name : SHARED_ATTRIBUTES) {
+            Element first = paths.getFirst();
+            if (first.hasAttribute(name) && paths.stream().allMatch(path -> path.hasAttribute(name)
+                    && path.getAttribute(name).equals(first.getAttribute(name)))) {
+                group.setAttribute(name, first.getAttribute(name));
+                paths.forEach(path -> path.removeAttribute(name));
+            }
+        }
+
+        Element joined = null;
+        List<java.awt.geom.Rectangle2D> joinedBounds = new ArrayList<>();
+        for (Element path : paths) {
+            java.awt.geom.Rectangle2D bounds = SvgPathGeometry.parse(path.getAttribute("d"))
+                    .map(Path2D::getBounds2D).orElse(null);
+            if (joined != null && bounds != null && sameAttributesBesidesData(joined, path)
+                    && joinedBounds.stream().noneMatch(other -> SvgPathGeometry.intersects(bounds, other))) {
+                joined.setAttribute("d", joined.getAttribute("d") + " " + path.getAttribute("d"));
+                joinedBounds.add(bounds);
+                group.removeChild(path);
+                continue;
+            }
+            joined = bounds == null ? null : path;
+            joinedBounds = new ArrayList<>();
+            if (bounds != null) {
+                joinedBounds.add(bounds);
+            }
+        }
+        if (decimals >= 0) {
+            for (org.w3c.dom.Node node = group.getFirstChild(); node != null; node = node.getNextSibling()) {
+                if (node instanceof Element path && "path".equals(path.getLocalName())) {
+                    path.setAttribute("d", rounded(path.getAttribute("d"), decimals));
+                }
+            }
+        }
+    }
+
+    private static boolean sameAttributesBesidesData(Element first, Element second) {
+        org.w3c.dom.NamedNodeMap attributes = first.getAttributes();
+        if (attributes.getLength() != second.getAttributes().getLength()) {
+            return false;
+        }
+        for (int index = 0; index < attributes.getLength(); index++) {
+            org.w3c.dom.Node attribute = attributes.item(index);
+            if (!"d".equals(attribute.getNodeName())
+                    && !attribute.getNodeValue().equals(second.getAttribute(attribute.getNodeName()))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static String rounded(String data, int decimals) {
+        java.util.regex.Matcher matcher = NUMBER.matcher(data);
+        StringBuilder result = new StringBuilder();
+        while (matcher.find()) {
+            java.math.BigDecimal value = new java.math.BigDecimal(matcher.group())
+                    .setScale(decimals, java.math.RoundingMode.HALF_UP).stripTrailingZeros();
+            String text = value.signum() == 0 ? "0" : value.toPlainString();
+            matcher.appendReplacement(result, text);
+        }
+        matcher.appendTail(result);
+        return result.toString();
+    }
+
+    private static void writePngs(List<PreparedIcon> icons, Path directory) throws IOException {
+        Files.createDirectories(directory);
+        for (PreparedIcon icon : icons) {
+            for (int factor : PNG_FACTORS) {
+                writePng(SvgRasterizer.render(icon.svg(), factor),
+                        directory.resolve(icon.name() + (factor == 1 ? "" : "@" + factor + "x") + ".png"));
+            }
+        }
+    }
+
+    /** Square app icons in the common sizes and a favicon.ico holding the three smallest as PNGs. */
+    private static void writeIconSets(List<PreparedIcon> icons, SvgExportSettings settings, Path directory)
+            throws IOException {
+        Files.createDirectories(directory);
+        for (PreparedIcon icon : icons) {
+            List<byte[]> favicons = new ArrayList<>();
+            for (int size : ICON_SIZES) {
+                double factor = (double) size / Math.max(settings.width(), settings.height());
+                java.awt.image.BufferedImage rendered = SvgRasterizer.render(icon.svg(), factor);
+                java.awt.image.BufferedImage square =
+                        new java.awt.image.BufferedImage(size, size, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                java.awt.Graphics2D graphics = square.createGraphics();
+                try {
+                    graphics.drawImage(rendered, (size - rendered.getWidth()) / 2, (size - rendered.getHeight()) / 2, null);
+                } finally {
+                    graphics.dispose();
+                }
+                writePng(square, directory.resolve(icon.name() + "-" + size + ".png"));
+                if (java.util.Arrays.stream(FAVICON_SIZES).anyMatch(favicon -> favicon == size)) {
+                    favicons.add(pngBytes(square));
+                }
+            }
+            writeBytes(directory.resolve(icon.name() + ".ico"), ico(favicons, FAVICON_SIZES));
+        }
+    }
+
+    /** An ICO file whose images are stored as PNG, which every current browser and Windows read. */
+    private static byte[] ico(List<byte[]> images, int[] sizes) {
+        int headerSize = 6 + 16 * images.size();
+        int total = headerSize + images.stream().mapToInt(image -> image.length).sum();
+        java.nio.ByteBuffer buffer = java.nio.ByteBuffer.allocate(total).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        buffer.putShort((short) 0).putShort((short) 1).putShort((short) images.size());
+        int offset = headerSize;
+        for (int index = 0; index < images.size(); index++) {
+            int size = sizes[index];
+            buffer.put((byte) (size >= 256 ? 0 : size)).put((byte) (size >= 256 ? 0 : size))
+                    .put((byte) 0).put((byte) 0).putShort((short) 1).putShort((short) 32)
+                    .putInt(images.get(index).length).putInt(offset);
+            offset += images.get(index).length;
+        }
+        images.forEach(buffer::put);
+        return buffer.array();
+    }
+
+    private static void writePng(java.awt.image.BufferedImage image, Path destination) throws IOException {
+        writeBytes(destination, pngBytes(image));
+    }
+
+    private static byte[] pngBytes(java.awt.image.BufferedImage image) throws IOException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        if (!javax.imageio.ImageIO.write(image, "png", bytes)) {
+            throw new IOException("Could not write PNG");
+        }
+        return bytes.toByteArray();
     }
 
     private static int layerRank(Element path) {

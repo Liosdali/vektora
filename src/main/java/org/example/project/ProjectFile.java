@@ -58,7 +58,8 @@ public final class ProjectFile {
         root.set("traceOptions", traceOptions(pack.traceOptions()));
         SvgExportSettings export = pack.exportSettings();
         root.putObject("exportSettings").put("width", export.width()).put("height", export.height())
-                .put("scale", export.scale()).put("mosaic", export.mosaic());
+                .put("scale", export.scale()).put("mosaic", export.mosaic()).put("compact", export.compact())
+                .put("decimals", export.decimals());
         ArrayNode palettes = root.putArray("palettes");
         pack.palettes().forEach(palette -> palettes.add(colors(palette)));
 
@@ -142,7 +143,8 @@ public final class ProjectFile {
             JsonNode export = root.path("exportSettings");
             SvgExportSettings exportSettings = export.isMissingNode() ? new SvgExportSettings(128, 128, 1)
                     : new SvgExportSettings(export.get("width").asInt(), export.get("height").asInt(),
-                    export.get("scale").asDouble(), export.path("mosaic").asBoolean(false));
+                    export.get("scale").asDouble(), export.path("mosaic").asBoolean(false),
+                    export.path("compact").asBoolean(false), export.path("decimals").asInt(-1));
             List<List<Color>> palettes = new ArrayList<>();
             root.path("palettes").forEach(palette -> palettes.add(colors(palette)));
             for (JsonNode node : root.path("icons")) {

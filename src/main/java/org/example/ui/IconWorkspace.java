@@ -76,6 +76,8 @@ public final class IconWorkspace extends BorderPane {
     private final TextField heightField = new TextField("128");
     private final TextField scaleField = new TextField("1.0");
     private final CheckBox mosaicBox = new CheckBox("Boşluksuz (mozaik) çizim");
+    private final CheckBox compactBox = new CheckBox("SVG'yi küçült");
+    private final ComboBox<String> decimalsBox = new ComboBox<>();
     private final Button importButton = new Button("PNG/JPG ekle");
     private final Button undoButton = new Button("Geri al");
     private final Button redoButton = new Button("Yinele");
@@ -359,11 +361,21 @@ public final class IconWorkspace extends BorderPane {
                         : "Katmanlar yeniden üst üste çiziliyor.");
             }
         });
+        decimalsBox.getItems().setAll("Koordinatları olduğu gibi bırak", "Tam sayıya yuvarla",
+                "1 ondalık basamak", "2 ondalık basamak");
+        decimalsBox.getSelectionModel().select(2);
+        decimalsBox.setMaxWidth(Double.MAX_VALUE);
+        decimalsBox.disableProperty().bind(compactBox.selectedProperty().not());
+        compactBox.selectedProperty().addListener((observable, previous, selected) -> applyCompactSettings());
+        decimalsBox.valueProperty().addListener((observable, previous, selected) -> applyCompactSettings());
         VBox canvas = new VBox(8, sectionTitle("Tuval"), mutedLabel("SVG tuval ölçüsü"),
                 new HBox(8, widthField, heightField), mutedLabel("İkon ölçeği"), scaleField,
                 mutedLabel("1.0 = tuvali doldurur · 0.5 = yarı boyut"), applySettings, mosaicBox,
                 mutedLabel("Her katmandan üstüne çizilenleri keser; vinil kesim ve gravür için şekiller "
-                        + "üst üste binmez. Dosya biraz büyüyebilir."));
+                        + "üst üste binmez. Dosya biraz büyüyebilir."),
+                compactBox, decimalsBox,
+                mutedLabel("Ortak öznitelikleri katmana taşır, bitişik yolları birleştirir ve koordinatları "
+                        + "yuvarlar; görünüş değişmez, dosya genellikle yarı yarıya küçülür."));
 
         settingsPane.getChildren().setAll(background, colors, canvas);
     }
@@ -449,7 +461,12 @@ public final class IconWorkspace extends BorderPane {
         zip.setOnAction(event -> export(ExportFormat.ZIP));
         MenuItem layers = new MenuItem("Katmanları ayrı SVG…");
         layers.setOnAction(event -> export(ExportFormat.LAYER_SVGS));
-        exportButton.getItems().setAll(individual, sprite, zip, new SeparatorMenuItem(), layers);
+        MenuItem png = new MenuItem("Saydam PNG (1x · 2x · 4x)…");
+        png.setOnAction(event -> export(ExportFormat.PNG));
+        MenuItem icons = new MenuItem("Favicon ve uygulama ikonları…");
+        icons.setOnAction(event -> export(ExportFormat.ICON_SET));
+        exportButton.getItems().setAll(individual, sprite, zip, new SeparatorMenuItem(), layers,
+                new SeparatorMenuItem(), png, icons);
     }
 
     private void configureProjectMenu() {
@@ -591,6 +608,8 @@ public final class IconWorkspace extends BorderPane {
         heightField.setText(Integer.toString(settings.height()));
         scaleField.setText(Double.toString(settings.scale()));
         mosaicBox.setSelected(settings.mosaic());
+        decimalsBox.getSelectionModel().select(settings.decimals() + 1);
+        compactBox.setSelected(settings.compact());
         paletteEditor.setPalettes(controller.pack().palettes());
         icons.setAll(controller.pack().icons());
         packageCount.setText(icons.size() + " ikon");
@@ -718,11 +737,14 @@ public final class IconWorkspace extends BorderPane {
 
     private Path chooseExportDestination(ExportFormat format) {
         Window window = getWindow();
-        if (format == ExportFormat.INDIVIDUAL_SVGS || format == ExportFormat.LAYER_SVGS) {
+        if (format != ExportFormat.ZIP && format != ExportFormat.SPRITE_SVG) {
             DirectoryChooser chooser = new DirectoryChooser();
-            chooser.setTitle(format == ExportFormat.LAYER_SVGS
-                    ? "Katman SVG'lerinin kaydedileceği klasörü seç"
-                    : "SVG dosyalarının kaydedileceği klasörü seç");
+            chooser.setTitle(switch (format) {
+                case LAYER_SVGS -> "Katman SVG'lerinin kaydedileceği klasörü seç";
+                case PNG -> "PNG dosyalarının kaydedileceği klasörü seç";
+                case ICON_SET -> "Favicon ve ikonların kaydedileceği klasörü seç";
+                default -> "SVG dosyalarının kaydedileceği klasörü seç";
+            });
             File directory = chooser.showDialog(window);
             return directory == null ? null : directory.toPath();
         }
@@ -741,7 +763,8 @@ public final class IconWorkspace extends BorderPane {
             SvgExportSettings settings = new SvgExportSettings(
                     Integer.parseInt(widthField.getText().trim()),
                     Integer.parseInt(heightField.getText().trim()),
-                    Double.parseDouble(scaleField.getText().trim()), mosaicBox.isSelected());
+                    Double.parseDouble(scaleField.getText().trim()), mosaicBox.isSelected(),
+                    compactBox.isSelected(), selectedDecimals());
             controller.setExportSettings(settings);
             markDirty();
             status.setText("SVG tuval ölçüsü ve ölçeği güncellendi.");
@@ -774,6 +797,22 @@ public final class IconWorkspace extends BorderPane {
         syncTraceControls(recommended);
         updateTraceOptions();
         status.setText("Renkler " + recommended.maxColors() + " tona indirildi.");
+    }
+
+    /** The decimals picked in the list: -1 keeps coordinates as traced. */
+    private int selectedDecimals() {
+        return decimalsBox.getSelectionModel().getSelectedIndex() - 1;
+    }
+
+    private void applyCompactSettings() {
+        SvgExportSettings settings = controller.pack().exportSettings();
+        if (settings.compact() == compactBox.isSelected() && settings.decimals() == selectedDecimals()) {
+            return;
+        }
+        controller.setExportSettings(settings.withCompact(compactBox.isSelected(), selectedDecimals()));
+        markDirty();
+        refreshPreview(iconList.getSelectionModel().getSelectedItem());
+        status.setText(compactBox.isSelected() ? "SVG çıktısı küçültülüyor." : "SVG çıktısı küçültülmüyor.");
     }
 
     private void updateTraceOptions() {
