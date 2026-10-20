@@ -62,7 +62,7 @@ public final class IconPreviewPane extends BorderPane {
     private static String previewDocument(String svg) {
         return """
                 <!doctype html><html><head><meta charset="utf-8"><style>
-                html,body{height:100%;margin:0;background:#151b27}
+                html,body{height:100%%;margin:0;background:#151b27}
                 body{display:grid;place-items:center;padding:20px;box-sizing:border-box}
                 svg{width:min(100%%,420px);height:min(100%%,420px);filter:drop-shadow(0 16px 30px #0006)}
                 </style></head><body>%s</body></html>

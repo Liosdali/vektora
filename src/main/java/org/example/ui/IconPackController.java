@@ -8,7 +8,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Objects;
 import javax.imageio.ImageIO;
@@ -18,6 +21,8 @@ import org.example.export.SvgExportService;
 import org.example.export.SvgExportSettings;
 import org.example.model.IconAsset;
 import org.example.model.IconPack;
+import org.example.vector.BackgroundRegionProcessor;
+import org.example.vector.PixelCoordinate;
 import org.example.vector.SvgVectorizer;
 import org.example.vector.TraceOptions;
 import org.example.vector.VectorizationException;
@@ -91,10 +96,28 @@ public final class IconPackController {
         pack.setPalettes(palettes);
     }
 
-    public List<IconVariant> preview(IconAsset icon) throws VectorizationException, IOException {
-        if (!pack.icons().contains(icon)) {
-            throw new IllegalArgumentException("Icon does not belong to this package");
+    public void addBackgroundRemovalSeed(IconAsset icon, PixelCoordinate seed) {
+        requireOwnedIcon(icon);
+        Objects.requireNonNull(seed, "Background seed is required");
+        if (seed.x() < 0 || seed.y() < 0
+                || seed.x() >= icon.image().getWidth() || seed.y() >= icon.image().getHeight()) {
+            throw new IllegalArgumentException("Background seed must be inside the source image");
         }
+        pack.addBackgroundRemovalSeed(icon, seed);
+    }
+
+    public List<PixelCoordinate> backgroundRemovalSeeds(IconAsset icon) {
+        requireOwnedIcon(icon);
+        return pack.backgroundRemovalSeeds(icon);
+    }
+
+    public void clearBackgroundRemovalSeeds(IconAsset icon) {
+        requireOwnedIcon(icon);
+        pack.clearBackgroundRemovalSeeds(icon);
+    }
+
+    public List<IconVariant> preview(IconAsset icon) throws VectorizationException, IOException {
+        requireOwnedIcon(icon);
         List<IconVariant> variants = createVariants(icon);
         List<IconVariant> previews = new ArrayList<>(variants.size());
         for (IconVariant variant : variants) {
@@ -105,14 +128,39 @@ public final class IconPackController {
     }
 
     public void export(Path destination, ExportFormat format) throws IOException, VectorizationException {
+        export(destination, format, backgroundRemovalSnapshot());
+    }
+
+    public Map<IconAsset, List<PixelCoordinate>> backgroundRemovalSnapshot() {
+        Map<IconAsset, List<PixelCoordinate>> snapshot = new IdentityHashMap<>();
+        for (IconAsset icon : pack.icons()) {
+            snapshot.put(icon, pack.backgroundRemovalSeeds(icon));
+        }
+        return Collections.unmodifiableMap(snapshot);
+    }
+
+    public void export(
+            Path destination,
+            ExportFormat format,
+            Map<IconAsset, List<PixelCoordinate>> backgroundSelections)
+            throws IOException, VectorizationException {
+        Objects.requireNonNull(backgroundSelections, "Background selections are required");
         List<IconVariant> variants = new ArrayList<>();
         for (IconAsset icon : pack.icons()) {
-            variants.addAll(createVariants(icon));
+            List<PixelCoordinate> seeds = backgroundSelections.getOrDefault(icon, List.of());
+            variants.addAll(createVariants(icon, seeds));
         }
         exportService.export(variants, pack.exportSettings(), destination, format);
     }
 
     private List<IconVariant> createVariants(IconAsset icon) throws VectorizationException {
+        return createVariants(icon, pack.backgroundRemovalSeeds(icon));
+    }
+
+    private List<IconVariant> createVariants(IconAsset icon, List<PixelCoordinate> seeds)
+            throws VectorizationException {
+        BufferedImage image = BackgroundRegionProcessor.removeSelectedRegions(
+                icon.image(), seeds);
         List<List<Color>> palettes = pack.palettes();
         if (pack.traceOptions().mode() == TraceOptions.ColorMode.CUSTOM_PALETTE && !palettes.isEmpty()) {
             List<IconVariant> variants = new ArrayList<>(palettes.size());
@@ -120,7 +168,7 @@ public final class IconPackController {
                 List<Color> palette = palettes.get(index);
                 TraceOptions options = new TraceOptions(
                         TraceOptions.ColorMode.CUSTOM_PALETTE, palette.size(), palette);
-                String svg = vectorizer.vectorize(icon.image(), options);
+                String svg = vectorizer.vectorize(image, options);
                 variants.add(new IconVariant(icon.name(), "palette-" + (index + 1), svg));
             }
             return List.copyOf(variants);
@@ -128,7 +176,13 @@ public final class IconPackController {
 
         String variantName = pack.traceOptions().mode() == TraceOptions.ColorMode.CUSTOM_PALETTE
                 ? "custom" : "default";
-        String svg = vectorizer.vectorize(icon.image(), pack.traceOptions());
+        String svg = vectorizer.vectorize(image, pack.traceOptions());
         return List.of(new IconVariant(icon.name(), variantName, svg));
+    }
+
+    private void requireOwnedIcon(IconAsset icon) {
+        if (icon == null || pack.icons().stream().noneMatch(owned -> owned == icon)) {
+            throw new IllegalArgumentException("Icon does not belong to this package");
+        }
     }
 }

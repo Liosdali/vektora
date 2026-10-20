@@ -50,6 +50,61 @@ class ImageTracerVectorizerTest {
     }
 
     @Test
+    void keepsTransparentPixelsTransparentWhenUsingASingleColorPalette() throws Exception {
+        BufferedImage image = image(12, 12, true);
+        fill(image, 3, 3, 6, 6, Color.RED);
+        TraceOptions options = new TraceOptions(
+                TraceOptions.ColorMode.CUSTOM_PALETTE, 1, List.of(Color.BLUE));
+
+        Document document = parse(vectorizer.vectorize(image, options));
+
+        assertEquals(Set.of("RGB(0,0,255)"), pathFills(document));
+        assertTrue(pathOpacities(document).contains("0.0"));
+        assertTrue(pathOpacities(document).contains("1.0"));
+    }
+
+    @Test
+    void removesSolidBorderBackgroundBeforeMappingTheArtworkToOneColor() throws Exception {
+        BufferedImage image = image(12, 12, false);
+        fill(image, 0, 0, 12, 12, Color.WHITE);
+        fill(image, 1, 1, 10, 10, new Color(248, 248, 248));
+        fill(image, 3, 3, 6, 6, Color.RED);
+        fill(image, 5, 5, 1, 1, Color.WHITE);
+        TraceOptions options = new TraceOptions(
+                TraceOptions.ColorMode.CUSTOM_PALETTE, 1, List.of(Color.BLUE));
+
+        Document document = parse(vectorizer.vectorize(image, options));
+
+        assertEquals(Set.of("RGB(0,0,255)"), pathFills(document));
+        assertTrue(pathOpacities(document).contains("0.0"));
+        assertTrue(pathOpacities(document).contains("1.0"));
+    }
+
+    @Test
+    void automaticBorderCleanupPreservesDisconnectedSimilarColoredArtwork() throws Exception {
+        BufferedImage image = image(12, 12, false);
+        fill(image, 0, 0, 12, 12, Color.WHITE);
+        fill(image, 1, 1, 10, 10, new Color(248, 248, 248));
+        fill(image, 3, 3, 6, 6, Color.RED);
+        image.setRGB(5, 5, Color.WHITE.getRGB());
+
+        Set<String> fills = pathFills(parse(vectorizer.vectorize(
+                image, TraceOptions.preserveSourceColors())));
+
+        assertTrue(fills.contains("RGB(255,255,255)"));
+    }
+
+    @Test
+    void cropsTransparentMarginsSoTheVectorUsesTheArtworkBounds() throws Exception {
+        BufferedImage image = image(20, 20, true);
+        fill(image, 6, 6, 8, 8, Color.RED);
+
+        Document document = parse(vectorizer.vectorize(image, TraceOptions.preserveSourceColors()));
+
+        assertEquals("0 0 10 10", document.getDocumentElement().getAttribute("viewBox"));
+    }
+
+    @Test
     void reducesSourceArtworkToTheConfiguredColorLimit() throws Exception {
         BufferedImage image = image(9, 3, false);
         fill(image, 0, 0, 3, 3, Color.RED);

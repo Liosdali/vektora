@@ -2,6 +2,8 @@ package org.example.ui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.Color;
@@ -17,6 +19,7 @@ import org.example.export.SvgExportSettings;
 import org.example.model.IconAsset;
 import org.example.model.IconPack;
 import org.example.vector.ImageTracerVectorizer;
+import org.example.vector.PixelCoordinate;
 import org.example.vector.TraceOptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -135,6 +138,45 @@ class IconPackControllerTest {
 
         assertEquals(1, issues.size());
         assertTrue(controller.pack().icons().isEmpty());
+    }
+
+    @Test
+    void storesBackgroundSeedsPerIconAndClearsOnlyTheRequestedIcon(@TempDir Path directory)
+            throws Exception {
+        Path first = writePng(directory.resolve("first.png"), Color.RED);
+        Path second = writePng(directory.resolve("second.png"), Color.BLUE);
+        IconPackController controller = controller();
+        controller.addImages(List.of(first, second));
+        IconAsset firstIcon = controller.pack().icons().get(0);
+        IconAsset secondIcon = controller.pack().icons().get(1);
+        PixelCoordinate firstSeed = new PixelCoordinate(2, 2);
+        PixelCoordinate secondSeed = new PixelCoordinate(3, 3);
+
+        controller.addBackgroundRemovalSeed(firstIcon, firstSeed);
+        controller.addBackgroundRemovalSeed(firstIcon, firstSeed);
+        controller.addBackgroundRemovalSeed(secondIcon, secondSeed);
+
+        assertEquals(List.of(firstSeed), controller.backgroundRemovalSeeds(firstIcon));
+        assertEquals(List.of(secondSeed), controller.backgroundRemovalSeeds(secondIcon));
+
+        controller.clearBackgroundRemovalSeeds(firstIcon);
+
+        assertEquals(List.of(), controller.backgroundRemovalSeeds(firstIcon));
+        assertEquals(List.of(secondSeed), controller.backgroundRemovalSeeds(secondIcon));
+    }
+
+    @Test
+    void rejectsAnEqualButDistinctIconInstance(@TempDir Path directory) throws Exception {
+        Path source = writePng(directory.resolve("same.png"), Color.RED);
+        IconPackController controller = controller();
+        controller.addImages(List.of(source));
+        IconAsset imported = controller.pack().icons().getFirst();
+        IconAsset equalButDistinct = new IconAsset(imported.source(), imported.name(), imported.image());
+        assertEquals(imported, equalButDistinct);
+        assertNotSame(imported, equalButDistinct);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> controller.backgroundRemovalSeeds(equalButDistinct));
     }
 
     private static IconPackController controller() {

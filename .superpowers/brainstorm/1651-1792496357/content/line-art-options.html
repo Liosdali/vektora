@@ -1,0 +1,45 @@
+<h2>Tek renk SVG çizim stili</h2>
+<p class="subtitle">Kaynak arma renkli; hedef, ayrıntıları koruyan temiz bir tek renk vektör çizimi. Hangisi istediğine daha yakın?</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">Kaynak PNG</div>
+    <div class="mockup-body" style="display:grid;place-items:center;min-height:340px;background:#151b27">
+      <img src="squadron-source.png" alt="132nd Squadron kaynak arması" style="width:250px;height:250px;object-fit:contain">
+    </div>
+  </div>
+  <div class="cards">
+    <div class="card" data-choice="outline" onclick="toggleSelect(this)">
+      <div class="card-image" style="min-height:250px;display:grid;place-items:center;background:#151b27">
+        <svg viewBox="0 0 256 256" width="230" height="230" fill="none" stroke="#b5a7ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-label="Kontur çizgisi örneği">
+          <circle cx="128" cy="128" r="120"/><circle cx="128" cy="128" r="98"/>
+          <path d="M128 37v34M91 45l15 23M165 45l-15 23M48 128h20M188 128h20"/>
+          <path d="M128 83c-8-12-22-10-23 1 0 7 8 10 15 8v19c-13-5-20-12-26-22-13 8-22 3-35-8 2 17 13 28 28 34-15-1-25-6-37-18 4 20 16 30 36 36-14 1-24-2-34-10 6 18 18 25 39 28l18 1 5 55c4 10 11 10 15 0l5-55 18-1c21-3 33-10 39-28-10 8-20 11-34 10 20-6 32-16 36-36-12 12-22 17-37 18 15-6 26-17 28-34-13 11-22 16-35 8-6 10-13 17-26 22V92c7 2 15-1 15-8-1-11-15-13-23-1z"/>
+          <path d="M116 101h24M117 113h22M118 124h20M118 136h20M113 149h30M110 163h36"/>
+          <path d="M53 187l15-15m-9 28 18-18m-4 30 20-20m89-5 15 15m-9-28 18 18m-4 30-20-20"/>
+          <path d="M85 218l9-12m-2 19 9-12m60 5-9-12m2 19-9-12"/>
+        </svg>
+      </div>
+      <div class="card-body">
+        <h3>A · Kontur çizimi</h3>
+        <p>Şeffaf iç alan; dış sınırlar, kanat tüyleri, kılıç ve arma ayrıntıları çizgi olarak çizilir.</p>
+      </div>
+    </div>
+    <div class="card" data-choice="filled-lines" onclick="toggleSelect(this)">
+      <div class="card-image" style="min-height:250px;display:grid;place-items:center;background:#151b27">
+        <svg viewBox="0 0 256 256" width="230" height="230" fill="none" stroke="#b5a7ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Dolu şekil ve iç çizgiler örneği">
+          <circle cx="128" cy="128" r="120"/><circle cx="128" cy="128" r="98"/>
+          <path fill="#b5a7ff" d="M128 83c-8-12-22-10-23 1 0 7 8 10 15 8v19c-13-5-20-12-26-22-13 8-22 3-35-8 2 17 13 28 28 34-15-1-25-6-37-18 4 20 16 30 36 36-14 1-24-2-34-10 6 18 18 25 39 28l18 1 5 55c4 10 11 10 15 0l5-55 18-1c21-3 33-10 39-28-10 8-20 11-34 10 20-6 32-16 36-36-12 12-22 17-37 18 15-6 26-17 28-34-13 11-22 16-35 8-6 10-13 17-26 22V92c7 2 15-1 15-8-1-11-15-13-23-1z"/>
+          <path d="M128 37v34M91 45l15 23M165 45l-15 23M116 101h24M117 113h22M118 124h20M118 136h20M113 149h30M110 163h36"/>
+          <path d="M49 128h19M188 128h19M53 187l15-15m-9 28 18-18m-4 30 20-20m89-5 15 15m-9-28 18 18m-4 30-20-20"/>
+        </svg>
+      </div>
+      <div class="card-body">
+        <h3>B · Dolgulu amblem + detay çizgileri</h3>
+        <p>Ana kuş ve kılıç silüeti dolu; tüyler, iç ayrımlar ve arma çevresi çizgilerle korunur.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:16px">Bunlar yalnızca çizim tarzı örnekleri; dönüştürücü gerçek PNG’deki tüm sınırları ve ayrıntıları izlemeye çalışacak.</p>

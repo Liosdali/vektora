@@ -28,6 +28,12 @@ mvn test
 5. Özel palet modunda **Palet ekle** ile yeni bir renk varyantı oluştur; palete istediğin sayıda renk ekleyebilir veya renk seçicilerden değiştirebilirsin. Her palet ikon başına ayrı bir SVG varyantı üretir.
 6. **Dışa aktar** menüsünden ikon başına SVG dosyalarını, tek bir SVG sprite'ı veya bu çıktıları birlikte içeren ZIP paketini seç.
 
+Sprite dosyası açıldığında ikonları bir ızgarada gösterir; aynı zamanda her ikon `<symbol>` olarak tanımlı ve `<use href="ikon-sprite.svg#ikon-adi-varyant">` ile yeniden kullanılabilir.
+
 SVG çıktısı piksel çözünürlüğünden bağımsızdır; genişlik, yükseklik ve ölçek değerleri SVG tuvaline ve `viewBox`'a uygulanır. PNG dışa aktarımı bu uygulamanın kapsamında değildir.
+
+Vektörleştirme, şeffaf kenar boşluklarını kırpar ve kenarlarda baskın olan düz arka plan rengini (yakın tonlarıyla birlikte) şeffaflaştırır. Tek renkli özel palet, şeffaf arka planı koruyarak yalnızca çizimi renklendirir.
+
+Rozet veya ikon içindeki kapalı arka plan alanlarını temizlemek için ikonu seçip **Arka plan bölgelerini seç** düğmesine tıkla. Kaynak PNG'de silmek istediğin bağlı renk alanını seç; gerekirse diğer alanlar için tekrar tıkla. Seçilen pikselin renginden her kanalda en fazla 24 farklı olan, dört yönden bağlı pikseller saydamlaştırılır; kopuk ama aynı renkteki alanlar korunur. **Seçimleri temizle** yalnızca seçili ikonun seçimlerini sıfırlar. Bu seçimler önizlemeye, SVG dosyalarına, sprite'a ve ZIP'e birlikte uygulanır. Otomatik algılama veya tek renk paleti kuş, yazı ya da benzeri nesneleri anlamsal olarak tanımaz; karmaşık görsellerde kaldırılacak bölgeleri kullanıcı seçmelidir.
 
 İşleme yereldir; PNG görselleri bilgisayardan dışarı gönderilmez. Vektörleştirme kütüphanesinin lisansı `src/main/resources/META-INF/third-party/imagetracerjava-LICENSE.txt` dosyasındadır.

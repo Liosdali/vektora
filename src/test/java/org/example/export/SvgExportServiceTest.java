@@ -64,10 +64,20 @@ class SvgExportServiceTest {
         Path sprite = directory.resolve("icons.svg");
         service.export(icons, settings, sprite, ExportFormat.SPRITE_SVG);
         Document spriteDocument = parse(Files.readString(sprite));
+        Element spriteRoot = spriteDocument.getDocumentElement();
+        assertEquals("48", spriteRoot.getAttribute("width"));
+        assertEquals("24", spriteRoot.getAttribute("height"));
+        assertEquals("0 0 48 24", spriteRoot.getAttribute("viewBox"));
         NodeList symbols = spriteDocument.getElementsByTagName("symbol");
         assertEquals(2, symbols.getLength());
         assertEquals("arrow-blue", ((Element) symbols.item(0)).getAttribute("id"));
         assertEquals("arrow-green", ((Element) symbols.item(1)).getAttribute("id"));
+        NodeList uses = spriteDocument.getElementsByTagName("use");
+        assertEquals(2, uses.getLength());
+        assertEquals("#arrow-blue", ((Element) uses.item(0)).getAttribute("href"));
+        assertEquals("#arrow-green", ((Element) uses.item(1)).getAttribute("href"));
+        assertEquals("0", ((Element) uses.item(0)).getAttribute("x"));
+        assertEquals("24", ((Element) uses.item(1)).getAttribute("x"));
         assertEquals(2, spriteDocument.getElementsByTagName("path").getLength());
 
         Path zip = directory.resolve("icons.zip");

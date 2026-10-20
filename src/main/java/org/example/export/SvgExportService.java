@@ -200,19 +200,34 @@ public final class SvgExportService {
         try {
             Document output = newDocument();
             Element root = output.createElementNS(SVG_NAMESPACE, "svg");
-            root.setAttribute("width", Integer.toString(settings.width()));
-            root.setAttribute("height", Integer.toString(settings.height()));
-            root.setAttribute("viewBox", "0 0 " + settings.width() + " " + settings.height());
+            long columns = (long) Math.ceil(Math.sqrt(icons.size()));
+            long rows = (icons.size() + columns - 1) / columns;
+            long spriteWidth = settings.width() * columns;
+            long spriteHeight = settings.height() * rows;
+            root.setAttribute("width", Long.toString(spriteWidth));
+            root.setAttribute("height", Long.toString(spriteHeight));
+            root.setAttribute("viewBox", "0 0 " + spriteWidth + " " + spriteHeight);
             output.appendChild(root);
 
             Element definitions = output.createElementNS(SVG_NAMESPACE, "defs");
             root.appendChild(definitions);
-            for (PreparedIcon icon : icons) {
+            for (int index = 0; index < icons.size(); index++) {
+                PreparedIcon icon = icons.get(index);
                 Element symbol = output.createElementNS(SVG_NAMESPACE, "symbol");
                 symbol.setAttribute("id", icon.name());
                 symbol.setAttribute("viewBox", "0 0 " + settings.width() + " " + settings.height());
                 definitions.appendChild(symbol);
                 appendScaledSource(output, symbol, icon.source(), settings);
+
+                long column = index % columns;
+                long row = index / columns;
+                Element use = output.createElementNS(SVG_NAMESPACE, "use");
+                use.setAttribute("href", "#" + icon.name());
+                use.setAttribute("x", Long.toString(column * settings.width()));
+                use.setAttribute("y", Long.toString(row * settings.height()));
+                use.setAttribute("width", Integer.toString(settings.width()));
+                use.setAttribute("height", Integer.toString(settings.height()));
+                root.appendChild(use);
             }
             return serialize(output);
         } catch (IOException exception) {
