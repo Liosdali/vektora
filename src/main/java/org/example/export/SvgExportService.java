@@ -34,6 +34,14 @@ import org.xml.sax.SAXParseException;
 public final class SvgExportService {
     private static final String SVG_NAMESPACE = "http://www.w3.org/2000/svg";
 
+    public String renderSvg(IconVariant icon, SvgExportSettings settings) throws IOException {
+        if (icon == null || settings == null) {
+            throw new IllegalArgumentException("Icon and export settings are required");
+        }
+        SourceSvg source = parseSource(icon.svg());
+        return individualSvg(source, settings);
+    }
+
     public void export(
             List<IconVariant> icons,
             SvgExportSettings settings,
