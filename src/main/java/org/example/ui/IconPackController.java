@@ -71,11 +71,20 @@ public final class IconPackController {
     /** Replaces the package with the saved project; a failed read leaves it untouched. */
     public void openProject(Path file) throws IOException {
         ProjectFile.load(Objects.requireNonNull(file, "Project file is required"), pack);
+        forgetTraces();
     }
 
     /** Starts over with an empty package and default settings. */
     public void newProject() {
         pack.clear();
+        forgetTraces();
+    }
+
+    /** Cached traces hold their icons, and so the full images, until they are dropped. */
+    private void forgetTraces() {
+        synchronized (traces) {
+            traces.clear();
+        }
     }
 
     /** Adds an image that has no file of its own, such as one pasted from the clipboard. */

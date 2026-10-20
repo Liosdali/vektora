@@ -644,6 +644,19 @@ class IconPackControllerTest {
     }
 
     @Test
+    void startingOverForgetsCachedTracesOfTheOldImages(@TempDir Path directory) throws Exception {
+        IconPackController controller = controller();
+        controller.addImages(List.of(writePng(directory.resolve("sun.png"), Color.ORANGE)));
+        controller.previewWithLayers(controller.pack().icons().getFirst());
+        java.util.Map<?, ?> traces = FxTestSupport.field(controller, "traces");
+        assertFalse(traces.isEmpty());
+
+        controller.newProject();
+
+        assertTrue(traces.isEmpty());
+    }
+
+    @Test
     void newPackReducesToEightColorsAtTheDetailedLevel() {
         TraceOptions options = controller().pack().traceOptions();
 
