@@ -338,6 +338,44 @@ class IconPackControllerTest {
         assertTrue(controller.hasSubjectMask(icon));
     }
 
+    @Test
+    void recoloredLayersReachPreviewAndExportAndCanBeRestored(@TempDir Path directory) throws Exception {
+        Path source = writePng(directory.resolve("sun.png"), Color.RED);
+        IconPackController controller = controller();
+        controller.addImages(List.of(source));
+        IconAsset icon = controller.pack().icons().getFirst();
+
+        controller.setLayerColor(icon, "#ff0000", "#00ff00");
+        IconPreview preview = controller.previewWithLayers(icon);
+
+        assertEquals("#ff0000", preview.layers().getFirst().color());
+        assertTrue(preview.variants().getFirst().svg().contains("data-color=\"#00ff00\""));
+        Path exported = directory.resolve("out");
+        controller.export(exported, ExportFormat.INDIVIDUAL_SVGS);
+        assertTrue(Files.readString(exported.resolve("sun-default.svg")).contains("#00ff00"));
+
+        controller.setLayerColor(icon, "#ff0000", null);
+        assertTrue(controller.layerColors(icon).isEmpty());
+        assertThrows(IllegalArgumentException.class, () -> controller.setLayerColor(icon, "#ff0000", "green"));
+    }
+
+    @Test
+    void sourcePreviewUsesTheSameCanvasAndCropAsTheVector(@TempDir Path directory) throws Exception {
+        Path source = writePng(directory.resolve("sun.png"), Color.RED);
+        IconPackController controller = controller();
+        controller.addImages(List.of(source));
+        controller.setExportSettings(new SvgExportSettings(64, 32, 0.5));
+        IconAsset icon = controller.pack().icons().getFirst();
+
+        String sourceSvg = controller.previewWithLayers(icon).sourceSvg();
+
+        assertTrue(sourceSvg.contains("viewBox=\"0 0 64 32\""));
+        assertTrue(sourceSvg.contains("x=\"16.0\" y=\"8.0\" width=\"32.0\" height=\"16.0\""));
+        // The 6x6 square plus the one-pixel margin the tracer keeps.
+        assertTrue(sourceSvg.contains("viewBox=\"0 0 8 8\""));
+        assertTrue(sourceSvg.contains("data:image/png;base64,"));
+    }
+
     private static IconPackController controller() {
         return new IconPackController(new IconPack(), new ImageTracerVectorizer(), new SvgExportService());
     }

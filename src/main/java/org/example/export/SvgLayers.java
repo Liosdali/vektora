@@ -45,8 +45,20 @@ public final class SvgLayers {
      * revealing whatever ImageTracer stacked underneath.
      */
     public static String withColorsRemoved(String svg, Set<String> colors) throws IOException {
-        Objects.requireNonNull(colors, "Removed colors are required");
-        if (colors.isEmpty()) {
+        return withLayerChanges(svg, colors, Map.of());
+    }
+
+    /**
+     * Removes the layers in {@code removed} (see {@link #withColorsRemoved}) and repaints the
+     * layers keyed in {@code recolored} with their mapped {@code #rrggbb} color. Both are keyed by
+     * the traced color, so a recolored layer can still be found and changed again.
+     */
+    public static String withLayerChanges(String svg, Set<String> removed, Map<String, String> recolored)
+            throws IOException {
+        Objects.requireNonNull(removed, "Removed colors are required");
+        Objects.requireNonNull(recolored, "Recolored layers are required");
+        recolored.values().forEach(SvgLayers::requireHexColor);
+        if (removed.isEmpty() && recolored.isEmpty()) {
             return svg;
         }
         Document document = parse(svg);
@@ -55,8 +67,18 @@ public final class SvgLayers {
         for (int index = 0; index < paths.getLength(); index++) {
             Element path = (Element) paths.item(index);
             String color = visibleColor(path);
-            if (color != null && colors.contains(color)) {
+            if (color == null) {
+                continue;
+            }
+            if (removed.contains(color)) {
                 path.setAttribute("opacity", "0.0");
+                changed = true;
+            } else if (recolored.containsKey(color)) {
+                String replacement = recolored.get(color);
+                path.setAttribute("fill", replacement);
+                if (!path.getAttribute("stroke").isBlank() && !"none".equals(path.getAttribute("stroke"))) {
+                    path.setAttribute("stroke", replacement);
+                }
                 changed = true;
             }
         }
@@ -66,8 +88,15 @@ public final class SvgLayers {
         try {
             return SvgExportService.serialize(document);
         } catch (Exception exception) {
-            throw new IOException("Could not write SVG without removed layers", exception);
+            throw new IOException("Could not write SVG with changed layers", exception);
         }
+    }
+
+    public static String requireHexColor(String color) {
+        if (color == null || !color.matches("#[0-9a-f]{6}")) {
+            throw new IllegalArgumentException("Layer colors are lowercase #rrggbb values");
+        }
+        return color;
     }
 
     /** Whether the path stands for a removed, transparent area. */

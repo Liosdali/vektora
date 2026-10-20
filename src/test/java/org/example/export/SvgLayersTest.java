@@ -35,6 +35,20 @@ class SvgLayersTest {
     }
 
     @Test
+    void repaintsRecoloredLayersAndKeepsTheirOriginalColorAsTheKey() throws Exception {
+        String result = SvgLayers.withLayerChanges(SVG, Set.of(), java.util.Map.of("#1e2a44", "#c8f25c"));
+
+        assertEquals(List.of(new SvgLayer("#c8f25c", 2), new SvgLayer("#f3ebd8", 1)), SvgLayers.layers(result));
+        assertTrue(result.contains("M 1 1"));
+    }
+
+    @Test
+    void rejectsReplacementColorsThatAreNotHex() {
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> SvgLayers.withLayerChanges(SVG, Set.of(), java.util.Map.of("#1e2a44", "red")));
+    }
+
+    @Test
     void returnsTheSourceUnchangedWhenNothingIsHidden() throws Exception {
         assertSame(SVG, SvgLayers.withColorsRemoved(SVG, Set.of()));
     }

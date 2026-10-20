@@ -138,6 +138,53 @@ class ImageTracerVectorizerTest {
     }
 
     @Test
+    void reducedColorTracingIsReproducible() throws Exception {
+        BufferedImage image = image(40, 40, true);
+        for (int y = 0; y < 40; y++) {
+            for (int x = 0; x < 40; x++) {
+                image.setRGB(x, y, new Color(x * 6, y * 6, (x + y) * 3).getRGB());
+            }
+        }
+        TraceOptions reduced = new TraceOptions(TraceOptions.ColorMode.REDUCE_SOURCE, 6, List.of());
+
+        String first = vectorizer.vectorize(image, reduced);
+
+        for (int run = 0; run < 3; run++) {
+            assertEquals(first, vectorizer.vectorize(image, reduced));
+        }
+        assertTrue(pathFills(parse(first)).size() <= 6);
+    }
+
+    @Test
+    void colorReducerKeepsExactColorsWhenThereAreFewEnough() {
+        BufferedImage image = image(4, 1, true);
+        image.setRGB(0, 0, Color.RED.getRGB());
+        image.setRGB(1, 0, Color.RED.getRGB());
+        image.setRGB(2, 0, Color.BLUE.getRGB());
+
+        assertEquals(List.of(Color.BLUE, Color.RED), ColorReducer.reduce(image, 4));
+        assertEquals(1, ColorReducer.reduce(image, 1).size());
+    }
+
+    @Test
+    void mergesAntiAliasingBlendsOnlyFromTheFirstSimplificationLevel() {
+        BufferedImage image = image(30, 10, true);
+        fill(image, 0, 0, 14, 10, Color.BLACK);
+        fill(image, 14, 0, 2, 10, new Color(128, 128, 128));
+        fill(image, 16, 0, 14, 10, Color.WHITE);
+        fill(image, 0, 0, 2, 2, new Color(200, 30, 30));
+        fill(image, 0, 9, 3, 1, new Color(12, 14, 10));
+
+        List<Color> palette = ColorReducer.reduce(image, 8);
+        List<Color> merged = ColorReducer.withoutBlends(palette, image);
+
+        assertTrue(palette.contains(new Color(128, 128, 128)));
+        assertFalse(merged.contains(new Color(128, 128, 128)));
+        assertFalse(merged.contains(new Color(12, 14, 10)));
+        assertTrue(merged.containsAll(List.of(Color.BLACK, Color.WHITE, new Color(200, 30, 30))));
+    }
+
+    @Test
     void rejectsSimplificationOutsideTheSupportedLevels() {
         assertThrows(IllegalArgumentException.class,
                 () -> TraceOptions.preserveSourceColors().withSimplification(TraceOptions.MAX_SIMPLIFICATION + 1));

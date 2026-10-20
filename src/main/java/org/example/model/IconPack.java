@@ -20,6 +20,7 @@ public final class IconPack {
     private final Map<IconAsset, Deque<BackgroundSelection>> backgroundHistory = new IdentityHashMap<>();
     private final Map<IconAsset, Set<String>> hiddenLayerColors = new IdentityHashMap<>();
     private final Map<IconAsset, SubjectMask> subjectMasks = new IdentityHashMap<>();
+    private final Map<IconAsset, Map<String, String>> layerColors = new IdentityHashMap<>();
     private TraceOptions traceOptions = TraceOptions.preserveSourceColors();
     private SvgExportSettings exportSettings = new SvgExportSettings(128, 128, 1);
     private List<List<Color>> palettes = List.of();
@@ -124,6 +125,21 @@ public final class IconPack {
             colors.remove(color);
         }
         hiddenLayerColors.put(icon, Set.copyOf(colors));
+    }
+
+    /** Repaints the layer traced as {@code color}; a {@code null} replacement restores it. */
+    public synchronized void setLayerColor(IconAsset icon, String color, String replacement) {
+        Map<String, String> colors = new LinkedHashMap<>(layerColors(icon));
+        if (replacement == null || replacement.equals(color)) {
+            colors.remove(color);
+        } else {
+            colors.put(color, replacement);
+        }
+        layerColors.put(icon, Map.copyOf(colors));
+    }
+
+    public synchronized Map<String, String> layerColors(IconAsset icon) {
+        return layerColors.getOrDefault(icon, Map.of());
     }
 
     public synchronized Set<String> hiddenLayerColors(IconAsset icon) {

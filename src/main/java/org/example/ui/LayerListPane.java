@@ -1,8 +1,12 @@
 package org.example.ui;
 
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import javafx.scene.control.Button;
+import javafx.scene.control.ColorPicker;
 import javafx.scene.control.Label;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
@@ -10,6 +14,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
 import org.example.export.SvgLayer;
 
 /** One row per traced fill color; hiding a layer removes that color from preview and export. */
@@ -31,10 +36,15 @@ public final class LayerListPane extends VBox {
         empty.getStyleClass().add("muted");
         empty.setWrapText(true);
         getChildren().addAll(title, summary, hint, rows);
-        showLayers(List.of(), Set.of(), (color, hidden) -> { });
+        showLayers(List.of(), Set.of(), Map.of(), (color, hidden) -> { }, (color, replacement) -> { });
     }
 
-    public void showLayers(List<SvgLayer> layers, Set<String> hidden, BiConsumer<String, Boolean> onToggle) {
+    /**
+     * @param colors    replacement colors keyed by traced color
+     * @param onRecolor receives the traced color and its new color, or {@code null} to restore it
+     */
+    public void showLayers(List<SvgLayer> layers, Set<String> hidden, Map<String, String> colors,
+                           BiConsumer<String, Boolean> onToggle, BiConsumer<String, String> onRecolor) {
         rows.getChildren().clear();
         if (layers.isEmpty()) {
             summary.setText("");
@@ -56,17 +66,30 @@ public final class LayerListPane extends VBox {
             visibility.setDisable(!isHidden && visibleCount == 1);
             visibility.setOnAction(event -> onToggle.accept(layer.color(), visibility.isSelected()));
 
-            Region swatch = new Region();
-            swatch.getStyleClass().add("layer-swatch");
-            swatch.setStyle("-fx-background-color: " + layer.color() + ";");
-            Label color = new Label(layer.color().toUpperCase());
+            String shown = colors.getOrDefault(layer.color(), layer.color());
+            ColorPicker picker = new ColorPicker(Color.web(shown));
+            picker.getStyleClass().add("layer-color");
+            picker.setAccessibleText("Katman rengi: " + shown.toUpperCase());
+            picker.setTooltip(new Tooltip("Katmanın rengini değiştir"));
+            picker.setOnAction(event -> onRecolor.accept(layer.color(), hex(picker.getValue())));
+            Label color = new Label(shown.toUpperCase());
+            color.getStyleClass().add("mono");
+            color.setMinWidth(Region.USE_PREF_SIZE);
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
             Label count = new Label(Integer.toString(layer.pathCount()));
             count.getStyleClass().add("mono");
             Tooltip.install(count, new Tooltip(layer.pathCount() + " yol"));
 
-            HBox row = new HBox(visibility, swatch, color, spacer, count);
+            HBox row = new HBox(visibility, picker, color, spacer, count);
+            if (colors.containsKey(layer.color())) {
+                Button reset = new Button("↺");
+                reset.getStyleClass().add("ghost");
+                reset.setTooltip(new Tooltip("Özgün renge dön (" + layer.color().toUpperCase() + ")"));
+                reset.setAccessibleText("Özgün renge dön");
+                reset.setOnAction(event -> onRecolor.accept(layer.color(), null));
+                row.getChildren().add(row.getChildren().size() - 1, reset);
+            }
             row.getStyleClass().add("layer-row");
             if (isHidden) {
                 row.getStyleClass().add("hidden-layer");
@@ -80,5 +103,10 @@ public final class LayerListPane extends VBox {
             more.setWrapText(true);
             rows.getChildren().add(more);
         }
+    }
+
+    private static String hex(Color color) {
+        return String.format(Locale.ROOT, "#%02x%02x%02x", Math.round(color.getRed() * 255),
+                Math.round(color.getGreen() * 255), Math.round(color.getBlue() * 255));
     }
 }

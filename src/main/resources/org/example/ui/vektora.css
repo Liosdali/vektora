@@ -343,3 +343,14 @@
     -fx-border-color: -vk-accent;
     -fx-background-color: -vk-hover;
 }
+
+.color-picker.layer-color {
+    -fx-color-label-visible: false;
+    -fx-padding: 0;
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+}
+
+.color-picker.layer-color > .color-picker-label {
+    -fx-padding: 2;
+}

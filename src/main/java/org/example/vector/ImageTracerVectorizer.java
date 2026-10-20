@@ -2,6 +2,7 @@ package org.example.vector;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -21,22 +22,25 @@ public final class ImageTracerVectorizer implements SvgVectorizer {
 
         BufferedImage artwork = cropToArtwork(BackgroundRegionProcessor.removeBorderBackground(image));
         boolean hasTransparency = hasTransparentPixels(artwork);
+        boolean mergeBlends = options.simplification() >= 1;
         List<Color> sourceColors = options.mode() == TraceOptions.ColorMode.PRESERVE_SOURCE
-                ? sourcePalette(artwork) : List.of();
+                ? sourcePalette(artwork, mergeBlends) : List.of();
         List<Color> customColors = options.mode() == TraceOptions.ColorMode.CUSTOM_PALETTE
                 ? customPalette(options.palette(), hasTransparency) : List.of();
+        // ImageTracer's own color reduction reseeds clusters at random, so the same image could
+        // trace to different colors each time; a palette computed here keeps it reproducible.
+        List<Color> reducedColors = options.mode() == TraceOptions.ColorMode.REDUCE_SOURCE
+                ? customPalette(reducedPalette(artwork, options.maxColors(), mergeBlends), hasTransparency)
+                : List.of();
 
         HashMap<String, Float> tracerOptions = new HashMap<>();
-        tracerOptions.put("colorsampling",
-                options.mode() == TraceOptions.ColorMode.REDUCE_SOURCE ? 1f : 0f);
+        tracerOptions.put("colorsampling", 0f);
         tracerOptions.put("numberofcolors", (float) switch (options.mode()) {
             case PRESERVE_SOURCE -> sourceColors.size();
-            case REDUCE_SOURCE -> options.maxColors();
+            case REDUCE_SOURCE -> reducedColors.size();
             case CUSTOM_PALETTE -> customColors.size();
         });
-        if (options.mode() != TraceOptions.ColorMode.REDUCE_SOURCE) {
-            tracerOptions.put("colorquantcycles", 1f);
-        }
+        tracerOptions.put("colorquantcycles", 1f);
         Simplification simplification = Simplification.LEVELS[options.simplification()];
         tracerOptions.put("pathomit", simplification.omittedPathLength());
         tracerOptions.put("ltres", simplification.lineError());
@@ -47,7 +51,7 @@ public final class ImageTracerVectorizer implements SvgVectorizer {
         byte[][] palette = switch (options.mode()) {
             case PRESERVE_SOURCE -> encodePalette(sourceColors);
             case CUSTOM_PALETTE -> encodePalette(customColors);
-            case REDUCE_SOURCE -> null;
+            case REDUCE_SOURCE -> encodePalette(reducedColors);
         };
         try {
             return ImageTracer.imageToSVG(artwork, tracerOptions, palette);
@@ -80,7 +84,11 @@ public final class ImageTracerVectorizer implements SvgVectorizer {
         return List.copyOf(palette);
     }
 
-    private static BufferedImage cropToArtwork(BufferedImage source) {
+    /**
+     * The visible pixels' bounding box plus a one-pixel margin, which is the area that gets traced;
+     * a single pixel at the origin when nothing is visible.
+     */
+    public static Rectangle artworkBounds(BufferedImage source) {
         int minX = source.getWidth();
         int minY = source.getHeight();
         int maxX = -1;
@@ -96,18 +104,24 @@ public final class ImageTracerVectorizer implements SvgVectorizer {
             }
         }
         if (maxX < 0) {
-            return new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+            return new Rectangle(0, 0, 1, 1);
         }
-
         int left = Math.max(0, minX - 1);
         int top = Math.max(0, minY - 1);
         int right = Math.min(source.getWidth() - 1, maxX + 1);
         int bottom = Math.min(source.getHeight() - 1, maxY + 1);
-        BufferedImage cropped = new BufferedImage(right - left + 1, bottom - top + 1,
-                BufferedImage.TYPE_INT_ARGB);
+        return new Rectangle(left, top, right - left + 1, bottom - top + 1);
+    }
+
+    private static BufferedImage cropToArtwork(BufferedImage source) {
+        Rectangle bounds = artworkBounds(source);
+        BufferedImage cropped = new BufferedImage(bounds.width, bounds.height, BufferedImage.TYPE_INT_ARGB);
+        if (bounds.width == 1 && bounds.height == 1 && (source.getRGB(0, 0) >>> 24) == 0) {
+            return cropped;
+        }
         Graphics2D graphics = cropped.createGraphics();
         try {
-            graphics.drawImage(source, -left, -top, null);
+            graphics.drawImage(source, -bounds.x, -bounds.y, null);
         } finally {
             graphics.dispose();
         }
@@ -123,6 +137,21 @@ public final class ImageTracerVectorizer implements SvgVectorizer {
             }
         }
         return false;
+    }
+
+    private static List<Color> reducedPalette(BufferedImage artwork, int maxColors, boolean mergeBlends) {
+        List<Color> palette = ColorReducer.reduce(artwork, maxColors);
+        return mergeBlends ? ColorReducer.withoutBlends(palette, artwork) : palette;
+    }
+
+    private static List<Color> sourcePalette(BufferedImage image, boolean mergeBlends) {
+        List<Color> colors = sourcePalette(image);
+        if (!mergeBlends) {
+            return colors;
+        }
+        List<Color> opaque = colors.stream().filter(color -> color.getAlpha() == 255).toList();
+        List<Color> kept = ColorReducer.withoutBlends(opaque, image);
+        return colors.stream().filter(color -> color.getAlpha() != 255 || kept.contains(color)).toList();
     }
 
     private static List<Color> sourcePalette(BufferedImage image) {

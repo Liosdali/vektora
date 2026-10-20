@@ -21,4 +21,13 @@ class IconPreviewPaneTest {
         assertTrue(document.contains("height:100%;"));
         assertTrue(document.contains("<path fill=\"rgb(255,0,0)\""));
     }
+
+    @Test
+    void comparisonDocumentLaysTheSourceOverTheSvgAtTheGivenSplit() {
+        String document = IconPreviewPane.previewDocument("<svg id=\"vector\"></svg>", "<svg id=\"original\"></svg>", 30);
+
+        assertTrue(document.indexOf("id=\"vector\"") < document.indexOf("id=\"original\""));
+        assertTrue(document.contains("value=\"30\""));
+        assertTrue(document.contains("show(30);"));
+    }
 }

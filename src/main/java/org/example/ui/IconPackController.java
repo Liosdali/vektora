@@ -15,6 +15,8 @@ import org.example.vector.*;
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.awt.Rectangle;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -205,6 +207,20 @@ public final class IconPackController {
         pack.setLayerHidden(icon, color, hidden);
     }
 
+    public void setLayerColor(IconAsset icon, String color, String replacement) {
+        requireOwnedIcon(icon);
+        SvgLayers.requireHexColor(color);
+        if (replacement != null) {
+            SvgLayers.requireHexColor(replacement);
+        }
+        pack.setLayerColor(icon, color, replacement);
+    }
+
+    public Map<String, String> layerColors(IconAsset icon) {
+        requireOwnedIcon(icon);
+        return pack.layerColors(icon);
+    }
+
     public Set<String> hiddenLayerColors(IconAsset icon) {
         requireOwnedIcon(icon);
         return pack.hiddenLayerColors(icon);
@@ -229,14 +245,37 @@ public final class IconPackController {
         requireOwnedIcon(icon);
         List<IconVariant> traced = traceVariants(icon, pack.backgroundSelection(icon));
         Set<String> hidden = pack.hiddenLayerColors(icon);
+        Map<String, String> colors = pack.layerColors(icon);
         List<IconVariant> previews = new ArrayList<>(traced.size());
         for (IconVariant variant : traced) {
-            IconVariant visible = withoutHiddenLayers(variant, hidden);
+            IconVariant visible = withLayerChanges(variant, hidden, colors);
             String svg = exportService.renderSvg(visible, pack.exportSettings());
             previews.add(new IconVariant(variant.iconName(), variant.variantName(), svg));
         }
         List<SvgLayer> layers = traced.isEmpty() ? List.of() : SvgLayers.layers(traced.getFirst().svg());
-        return new IconPreview(previews, layers);
+        return new IconPreview(previews, layers, sourcePreviewSvg(icon));
+    }
+
+    /**
+     * The untouched source pixels of the traced area, placed on the package canvas the same way
+     * the vector is, so the two can be laid on top of each other.
+     */
+    String sourcePreviewSvg(IconAsset icon) throws IOException {
+        Rectangle bounds = ImageTracerVectorizer.artworkBounds(processedSource(icon));
+        ByteArrayOutputStream png = new ByteArrayOutputStream();
+        ImageIO.write(icon.image().getSubimage(bounds.x, bounds.y, bounds.width, bounds.height), "png", png);
+        SvgExportSettings settings = pack.exportSettings();
+        double width = settings.width() * settings.scale();
+        double height = settings.height() * settings.scale();
+        return String.format(Locale.ROOT, """
+                <svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">\
+                <svg x="%s" y="%s" width="%s" height="%s" viewBox="0 0 %d %d" preserveAspectRatio="xMidYMid meet">\
+                <image width="%d" height="%d" style="image-rendering:pixelated" \
+                href="data:image/png;base64,%s"/></svg></svg>""",
+                settings.width(), settings.height(), settings.width(), settings.height(),
+                (settings.width() - width) / 2, (settings.height() - height) / 2, width, height,
+                bounds.width, bounds.height, bounds.width, bounds.height,
+                Base64.getEncoder().encodeToString(png.toByteArray()));
     }
 
     public void export(Path destination, ExportFormat format) throws IOException, VectorizationException {
@@ -262,19 +301,21 @@ public final class IconPackController {
             BackgroundSelection selection =
                     backgroundSelections.getOrDefault(icon, BackgroundSelection.EMPTY);
             Set<String> hidden = pack.hiddenLayerColors(icon);
+            Map<String, String> colors = pack.layerColors(icon);
             for (IconVariant variant : traceVariants(icon, selection)) {
-                variants.add(withoutHiddenLayers(variant, hidden));
+                variants.add(withLayerChanges(variant, hidden, colors));
             }
         }
         exportService.export(variants, pack.exportSettings(), destination, format);
     }
 
-    private static IconVariant withoutHiddenLayers(IconVariant variant, Set<String> hidden) throws IOException {
-        if (hidden.isEmpty()) {
+    private static IconVariant withLayerChanges(
+            IconVariant variant, Set<String> hidden, Map<String, String> colors) throws IOException {
+        if (hidden.isEmpty() && colors.isEmpty()) {
             return variant;
         }
         return new IconVariant(variant.iconName(), variant.variantName(),
-                SvgLayers.withColorsRemoved(variant.svg(), hidden));
+                SvgLayers.withLayerChanges(variant.svg(), hidden, colors));
     }
 
     private static void requireStrokeInside(IconAsset icon, EraseStroke stroke) {
