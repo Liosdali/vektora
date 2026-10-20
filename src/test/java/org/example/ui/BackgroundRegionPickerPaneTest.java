@@ -9,6 +9,14 @@ import org.junit.jupiter.api.Test;
 
 class BackgroundRegionPickerPaneTest {
     @Test
+    void aFrameDraggedInAnyDirectionCoversBothCornerPixels() {
+        assertEquals(new java.awt.Rectangle(3, 5, 8, 4), BackgroundRegionPickerPane.frameBetween(
+                new PixelCoordinate(10, 5), new PixelCoordinate(3, 8)));
+        assertEquals(new java.awt.Rectangle(4, 4, 1, 1), BackgroundRegionPickerPane.frameBetween(
+                new PixelCoordinate(4, 4), new PixelCoordinate(4, 4)));
+    }
+
+    @Test
     void mapsAspectRatioFittedViewCoordinatesToSourcePixels() {
         Optional<PixelCoordinate> coordinate = BackgroundRegionPickerPane.sourceCoordinate(
                 30, 30, 10, 20, 40, 20, 4, 2);

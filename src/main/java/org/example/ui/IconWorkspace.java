@@ -24,10 +24,12 @@ import javafx.stage.Window;
 import org.example.export.ExportFormat;
 import org.example.export.SvgExportSettings;
 import org.example.model.IconAsset;
+import org.example.segmentation.GrabCutSegmenter;
 import org.example.segmentation.ModelStore;
 import org.example.segmentation.OnnxSubjectSegmenter;
 import org.example.segmentation.SegmentationException;
 import org.example.segmentation.SegmentationModel;
+import org.example.segmentation.SubjectSegmenter;
 import org.example.vector.BackgroundSelection;
 import org.example.vector.TraceOptions;
 import org.example.vector.VectorizationException;
@@ -68,6 +70,9 @@ public final class IconWorkspace extends BorderPane {
     private final Button detectSubjectButton = new Button("Konuyu otomatik bul");
     private final Button detectAllButton = new Button("Tüm görsellerde bul");
     private final ComboBox<SegmentationModel> subjectModel = new ComboBox<>();
+    private final Label subjectModelNote = mutedLabel("");
+    /** Which method produced each icon's subject mask, so GrabCut masks can follow brush edits. */
+    private final Map<IconAsset, SegmentationModel> maskModels = new IdentityHashMap<>();
     private final CheckBox keepSubjectBox = new CheckBox("Yalnızca konuyu koru");
     private final ModelStore modelStore = ModelStore.inUserHome();
     private final Map<SegmentationModel, OnnxSubjectSegmenter> segmenters = new EnumMap<>(SegmentationModel.class);
@@ -252,6 +257,8 @@ public final class IconWorkspace extends BorderPane {
         subjectModel.getSelectionModel().selectFirst();
         subjectModel.setMaxWidth(Double.MAX_VALUE);
         subjectModel.setAccessibleText("Konu ayırma modeli");
+        subjectModel.valueProperty().addListener((observable, previous, model) -> updateSubjectModelNote(model));
+        updateSubjectModelNote(subjectModel.getValue());
         Label toleranceLabel = new Label("Renk toleransı");
         Region toleranceSpacer = new Region();
         HBox.setHgrow(toleranceSpacer, Priority.ALWAYS);
@@ -259,7 +266,7 @@ public final class IconWorkspace extends BorderPane {
         HBox toleranceHeader = new HBox(toleranceLabel, toleranceSpacer, toleranceValue);
         defringeBox.setSelected(true);
         background.getChildren().addAll(detectSubjectButton, detectAllButton, subjectModel,
-                mutedLabel("Yerel model: görselin bilgisayardan çıkmaz. Model ilk kullanımda bir kez indirilir."),
+                subjectModelNote,
                 keepSubjectBox, new Separator(), selectBackgroundButton, showSvgPreviewButton,
                 toleranceHeader, toleranceSlider,
                 mutedLabel("Göze göre fark (ΔE): 2 zor fark edilir, 10 açıkça farklıdır. "
@@ -623,10 +630,31 @@ public final class IconWorkspace extends BorderPane {
                 }, stroke -> {
                     controller.addEraseStroke(icon, stroke);
                     backgroundChanged(icon, "Boyanan alan silindi.");
+                    refineGrabCut(icon);
                 }, stroke -> {
                     controller.addProtectStroke(icon, stroke);
                     backgroundChanged(icon, "Boyanan alan korunuyor.");
+                    refineGrabCut(icon);
+                }, controller.subjectFrame(icon), frame -> {
+                    controller.setSubjectFrame(icon, frame);
+                    subjectModel.setValue(SegmentationModel.GRABCUT);
+                    detectSubject(List.of(icon), SegmentationModel.GRABCUT, icon);
                 });
+    }
+
+    private void updateSubjectModelNote(SegmentationModel model) {
+        subjectModelNote.setText(model == SegmentationModel.GRABCUT
+                ? "Modelsiz yöntem: indirme gerekmez, çevrimdışı çalışır. Konu zeminle aynı renkleri "
+                        + "taşıyorsa yanılabilir; o zaman çerçeve çiz ya da fırçayla düzelt."
+                : "Yerel model: görselin bilgisayardan çıkmaz. Model ilk kullanımda bir kez indirilir.");
+    }
+
+    /** GrabCut treats brush strokes as hard constraints, so a stroke re-runs it around them. */
+    private void refineGrabCut(IconAsset icon) {
+        if (maskModels.get(icon) == SegmentationModel.GRABCUT
+                && controller.backgroundSelection(icon).keepSubjectOnly()) {
+            detectSubject(List.of(icon), SegmentationModel.GRABCUT, icon);
+        }
     }
 
     private void backgroundChanged(IconAsset icon, String message) {
@@ -644,8 +672,11 @@ public final class IconWorkspace extends BorderPane {
         if (icon == null || model == null) {
             return;
         }
-        List<IconAsset> targets = wholePack ? List.copyOf(icons) : List.of(icon);
-        if (!modelStore.isInstalled(model.spec())) {
+        detectSubject(wholePack ? List.copyOf(icons) : List.of(icon), model, icon);
+    }
+
+    private void detectSubject(List<IconAsset> targets, SegmentationModel model, IconAsset icon) {
+        if (model.needsDownload() && !modelStore.isInstalled(model.spec())) {
             Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
             confirm.initOwner(getWindow());
             confirm.setTitle("Model indirilsin mi?");
@@ -660,9 +691,12 @@ public final class IconWorkspace extends BorderPane {
         Task<Void> task = new Task<>() {
             @Override
             protected Void call() throws Exception {
-                Path file = modelStore.install(model.spec(), (done, total) -> updateMessage(String.format(
-                        "Model indiriliyor… %d / %d MB", done >> 20, total >> 20)));
-                OnnxSubjectSegmenter segmenter = segmenter(model, file);
+                SubjectSegmenter segmenter = new GrabCutSegmenter();
+                if (model.needsDownload()) {
+                    Path file = modelStore.install(model.spec(), (done, total) -> updateMessage(String.format(
+                            "Model indiriliyor… %d / %d MB", done >> 20, total >> 20)));
+                    segmenter = segmenter(model, file);
+                }
                 for (int index = 0; index < targets.size(); index++) {
                     updateMessage(targets.size() == 1 ? "Konu ayrılıyor…"
                             : "Konu ayrılıyor… " + (index + 1) + " / " + targets.size());
@@ -678,10 +712,12 @@ public final class IconWorkspace extends BorderPane {
         });
         detectSubjectButton.setDisable(true);
         detectAllButton.setDisable(true);
-        runTask(task, ignored -> backgroundChanged(icon, targets.size() == 1
+        runTask(task, ignored -> {
+            targets.forEach(target -> maskModels.put(target, model));
+            backgroundChanged(icon, targets.size() == 1
                 ? "Konu ayrıldı; geri kalanı silinecek. Ctrl+Z ile geri alınabilir."
-                : targets.size() + " görselde konu ayrıldı. Her görsel Ctrl+Z ile ayrı ayrı geri alınabilir."),
-                "Konu ayırma hazırlanıyor…");
+                : targets.size() + " görselde konu ayrıldı. Her görsel Ctrl+Z ile ayrı ayrı geri alınabilir.");
+        }, "Konu ayırma hazırlanıyor…");
     }
 
     private OnnxSubjectSegmenter segmenter(SegmentationModel model, Path file) throws SegmentationException {

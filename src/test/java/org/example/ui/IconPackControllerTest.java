@@ -396,6 +396,42 @@ class IconPackControllerTest {
     }
 
     @Test
+    void detectionHandsTheFrameAndBrushStrokesToTheSegmenter(@TempDir Path directory) throws Exception {
+        Path source = writePng(directory.resolve("sun.png"), Color.ORANGE);
+        IconPackController controller = controller();
+        controller.addImages(List.of(source));
+        IconAsset icon = controller.pack().icons().getFirst();
+        org.example.vector.EraseStroke erase =
+                new org.example.vector.EraseStroke(List.of(new PixelCoordinate(1, 1)), 1);
+        org.example.vector.EraseStroke protect =
+                new org.example.vector.EraseStroke(List.of(new PixelCoordinate(4, 4)), 1);
+        controller.addEraseStroke(icon, erase);
+        controller.addProtectStroke(icon, protect);
+        controller.setSubjectFrame(icon, new java.awt.Rectangle(1, 1, 6, 6));
+        List<org.example.segmentation.SegmentationHints> seen = new java.util.ArrayList<>();
+
+        controller.detectSubject(icon, new org.example.segmentation.SubjectSegmenter() {
+            @Override
+            public org.example.vector.SubjectMask segment(BufferedImage image) {
+                throw new AssertionError("hints must be passed");
+            }
+
+            @Override
+            public org.example.vector.SubjectMask segment(
+                    BufferedImage image, org.example.segmentation.SegmentationHints hints) {
+                seen.add(hints);
+                return new org.example.vector.SubjectMask(8, 8, new byte[64]);
+            }
+        });
+
+        assertEquals(new java.awt.Rectangle(1, 1, 6, 6), seen.getFirst().frame());
+        assertEquals(List.of(protect), seen.getFirst().keep());
+        assertEquals(List.of(erase), seen.getFirst().remove());
+        assertThrows(IllegalArgumentException.class,
+                () -> controller.setSubjectFrame(icon, new java.awt.Rectangle(4, 4, 10, 10)));
+    }
+
+    @Test
     void newPackReducesToEightColorsAtTheDetailedLevel() {
         TraceOptions options = controller().pack().traceOptions();
 

@@ -22,6 +22,7 @@ public final class IconPack {
     private final Map<IconAsset, Set<String>> hiddenLayerColors = new IdentityHashMap<>();
     private final Map<IconAsset, SubjectMask> subjectMasks = new IdentityHashMap<>();
     private final Map<IconAsset, Map<String, String>> layerColors = new IdentityHashMap<>();
+    private final Map<IconAsset, Rectangle> subjectFrames = new IdentityHashMap<>();
     private TraceOptions traceOptions = TraceOptions.recommended();
     private SvgExportSettings exportSettings = new SvgExportSettings(128, 128, 1);
     private List<List<Color>> palettes = List.of();
@@ -116,6 +117,20 @@ public final class IconPack {
 
     public synchronized SubjectMask subjectMask(IconAsset icon) {
         return subjectMasks.get(icon);
+    }
+
+    /** The area the user framed around the subject, or {@code null} to let the segmenter guess. */
+    public synchronized void setSubjectFrame(IconAsset icon, Rectangle frame) {
+        if (frame == null) {
+            subjectFrames.remove(icon);
+        } else {
+            subjectFrames.put(icon, new Rectangle(frame));
+        }
+    }
+
+    public synchronized Rectangle subjectFrame(IconAsset icon) {
+        Rectangle frame = subjectFrames.get(icon);
+        return frame == null ? null : new Rectangle(frame);
     }
 
     public synchronized BackgroundSelection backgroundSelection(IconAsset icon) {

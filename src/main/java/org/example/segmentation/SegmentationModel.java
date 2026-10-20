@@ -3,7 +3,10 @@ package org.example.segmentation;
 import java.net.URI;
 import java.util.Locale;
 
-/** Subject segmentation models from the rembg project, run locally with ONNX Runtime. */
+/**
+ * Ways to find the subject: models from the rembg project run locally with ONNX Runtime, and
+ * GrabCut, which needs no model at all.
+ */
 public enum SegmentationModel {
     U2NETP("Hızlı · U²-Net-p",
             new ModelSpec("u2netp.onnx",
@@ -14,7 +17,8 @@ public enum SegmentationModel {
             new ModelSpec("isnet-general-use.onnx",
                     URI.create("https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx"),
                     178_648_008, "60920e99c45464f2ba57bee2ad08c919a52bbf852739e96947fbb4358c0d964a"),
-            1024, new float[] {0.5f, 0.5f, 0.5f}, new float[] {1f, 1f, 1f});
+            1024, new float[] {0.5f, 0.5f, 0.5f}, new float[] {1f, 1f, 1f}),
+    GRABCUT("Modelsiz · GrabCut (indirme yok)", null, 0, null, null);
 
     private final String label;
     private final ModelSpec spec;
@@ -31,7 +35,14 @@ public enum SegmentationModel {
     }
 
     public ModelSpec spec() {
+        if (spec == null) {
+            throw new IllegalStateException(label + " needs no model file");
+        }
         return spec;
+    }
+
+    public boolean needsDownload() {
+        return spec != null;
     }
 
     public int inputSize() {
@@ -52,6 +63,6 @@ public enum SegmentationModel {
 
     @Override
     public String toString() {
-        return label + " (" + downloadSize() + ")";
+        return needsDownload() ? label + " (" + downloadSize() + ")" : label;
     }
 }

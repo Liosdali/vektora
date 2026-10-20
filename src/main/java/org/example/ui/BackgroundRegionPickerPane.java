@@ -29,6 +29,7 @@ import org.example.vector.PixelCoordinate;
 import org.example.vector.RegionSeed;
 import org.example.vector.RegionSuggestion;
 
+import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
@@ -51,6 +52,7 @@ public final class BackgroundRegionPickerPane extends BorderPane {
     private final ToggleButton regionTool = new ToggleButton("Bölge seç");
     private final ToggleButton eraseTool = new ToggleButton("Fırçayla sil");
     private final ToggleButton protectTool = new ToggleButton("Fırçayla koru");
+    private final ToggleButton frameTool = new ToggleButton("Konu çerçevesi");
     private final ToggleGroup viewGroup = new ToggleGroup();
     private final ToggleButton maskView = new ToggleButton("Maske");
     private final ToggleButton resultView = new ToggleButton("Sonuç");
@@ -67,6 +69,10 @@ public final class BackgroundRegionPickerPane extends BorderPane {
     private Consumer<RegionSeed> onSeedSelected = ignored -> { };
     private Consumer<EraseStroke> onStrokeDrawn = ignored -> { };
     private Consumer<EraseStroke> onProtectDrawn = ignored -> { };
+    private Consumer<Rectangle> onFrameDrawn = ignored -> { };
+    private Rectangle frame;
+    private PixelCoordinate frameStart;
+    private PixelCoordinate frameEnd;
     private double imageX;
     private double imageY;
     private double displayedWidth;
@@ -84,7 +90,8 @@ public final class BackgroundRegionPickerPane extends BorderPane {
         hint.getStyleClass().add("muted");
         hint.setWrapText(true);
 
-        HBox tools = segmented(toolGroup, regionTool, eraseTool, protectTool);
+        HBox tools = segmented(toolGroup, regionTool, eraseTool, protectTool, frameTool);
+        frameTool.setTooltip(new Tooltip("Modelsiz ayırma (GrabCut) çerçevenin dışını arka plan sayar"));
         toolGroup.selectedToggleProperty().addListener((observable, previous, selected) -> updateHint());
         HBox views = segmented(viewGroup, maskView, resultView);
         viewGroup.selectedToggleProperty().addListener((observable, previous, selected) -> draw());
@@ -92,7 +99,7 @@ public final class BackgroundRegionPickerPane extends BorderPane {
         Label brushLabel = new Label("Fırça");
         brushLabel.getStyleClass().add("muted");
         brushSize.setPrefWidth(120);
-        brushSize.disableProperty().bind(regionTool.selectedProperty());
+        brushSize.disableProperty().bind(regionTool.selectedProperty().or(frameTool.selectedProperty()));
         contiguous.setSelected(true);
         followGradient.setTooltip(new Tooltip(
                 "Her pikseli yanındaki seçili alanla karşılaştırır; yavaş değişen fonu tek tıkla seçer"));
@@ -170,6 +177,10 @@ public final class BackgroundRegionPickerPane extends BorderPane {
                 activeStroke.clear();
                 coordinateAt(event.getX(), event.getY()).ifPresent(activeStroke::add);
                 draw();
+            } else if (frameTool.isSelected()) {
+                frameStart = coordinateAt(event.getX(), event.getY()).orElse(null);
+                frameEnd = frameStart;
+                draw();
             }
         });
         canvas.setOnMouseDragged(event -> {
@@ -184,6 +195,9 @@ public final class BackgroundRegionPickerPane extends BorderPane {
                         draw();
                     }
                 });
+            } else if (frameTool.isSelected() && frameStart != null) {
+                frameEnd = clampedCoordinate(event.getX(), event.getY());
+                draw();
             }
         });
         canvas.setOnMouseReleased(event -> {
@@ -191,6 +205,15 @@ public final class BackgroundRegionPickerPane extends BorderPane {
                 EraseStroke stroke = new EraseStroke(activeStroke, brushRadius());
                 activeStroke.clear();
                 (protectTool.isSelected() ? onProtectDrawn : onStrokeDrawn).accept(stroke);
+            } else if (event.getButton() == MouseButton.PRIMARY && frameTool.isSelected() && frameStart != null) {
+                Rectangle drawn = frameBetween(frameStart, frameEnd);
+                frameStart = null;
+                frameEnd = null;
+                if (drawn.width >= 4 && drawn.height >= 4) {
+                    onFrameDrawn.accept(drawn);
+                } else {
+                    draw();
+                }
             }
         });
         canvas.setOnScroll(event -> {
@@ -213,6 +236,22 @@ public final class BackgroundRegionPickerPane extends BorderPane {
         });
     }
 
+    /** The pixel under the pointer, pulled back inside the image when dragging past its edge. */
+    private PixelCoordinate clampedCoordinate(double viewX, double viewY) {
+        int width = (int) sourceImage.getWidth();
+        int height = (int) sourceImage.getHeight();
+        double x = Math.max(imageX, Math.min(imageX + displayedWidth - 0.001, viewX));
+        double y = Math.max(imageY, Math.min(imageY + displayedHeight - 0.001, viewY));
+        return coordinateAt(x, y).orElse(new PixelCoordinate(width - 1, height - 1));
+    }
+
+    /** The smallest rectangle holding both corner pixels. */
+    static Rectangle frameBetween(PixelCoordinate first, PixelCoordinate second) {
+        int left = Math.min(first.x(), second.x());
+        int top = Math.min(first.y(), second.y());
+        return new Rectangle(left, top, Math.abs(first.x() - second.x()) + 1, Math.abs(first.y() - second.y()) + 1);
+    }
+
     private boolean isBrushTool() {
         return eraseTool.isSelected() || protectTool.isSelected();
     }
@@ -223,6 +262,9 @@ public final class BackgroundRegionPickerPane extends BorderPane {
                         + "Tekerlek: yakınlaştır · sağ tık sürükle: kaydır."
                 : eraseTool.isSelected()
                 ? "Silinecek kısmı boya; boyadığın alan renginden bağımsız olarak saydam yapılır."
+                : frameTool.isSelected()
+                ? "Konunun çevresine bir çerçeve sürükle; modelsiz ayırma (GrabCut) çerçevenin dışını "
+                        + "arka plan sayar ve hemen yeniden çalışır."
                 : "Yanlışlıkla silinen yeri boya; korunan alan hiçbir araçla silinmez.");
     }
 
@@ -248,13 +290,17 @@ public final class BackgroundRegionPickerPane extends BorderPane {
             IconAsset icon, BackgroundSelection currentSelection, BufferedImage processed,
             List<RegionSuggestion> suggestions,
             Consumer<RegionSeed> seedSelected, Consumer<EraseStroke> strokeDrawn,
-            Consumer<EraseStroke> protectDrawn) {
+            Consumer<EraseStroke> protectDrawn, Rectangle subjectFrame, Consumer<Rectangle> frameDrawn) {
         Objects.requireNonNull(icon, "Selected icon is required");
         Objects.requireNonNull(processed, "Processed image is required");
         selection = Objects.requireNonNull(currentSelection, "Background selection is required");
         onSeedSelected = Objects.requireNonNull(seedSelected, "Seed callback is required");
         onStrokeDrawn = Objects.requireNonNull(strokeDrawn, "Stroke callback is required");
         onProtectDrawn = Objects.requireNonNull(protectDrawn, "Protect callback is required");
+        onFrameDrawn = Objects.requireNonNull(frameDrawn, "Frame callback is required");
+        frame = subjectFrame;
+        frameStart = null;
+        frameEnd = null;
         activeStroke.clear();
         int largestBrush = Math.max(5, Math.min(icon.image().getWidth(), icon.image().getHeight()) / 4);
         brushSize.setMax(largestBrush);
@@ -370,6 +416,16 @@ public final class BackgroundRegionPickerPane extends BorderPane {
         graphics.setStroke(protectTool.isSelected()
                 ? PROTECT.deriveColor(0, 1, 1, 0.7) : Color.web("#facc15", 0.7));
         drawStroke(graphics, activeStroke, brushRadius(), sx, sy);
+
+        Rectangle shownFrame = frameStart != null ? frameBetween(frameStart, frameEnd) : frame;
+        if (shownFrame != null) {
+            graphics.setStroke(ACCENT);
+            graphics.setLineWidth(2);
+            graphics.setLineDashes(8, 6);
+            graphics.strokeRect(imageX + shownFrame.x * sx, imageY + shownFrame.y * sy,
+                    shownFrame.width * sx, shownFrame.height * sy);
+            graphics.setLineDashes();
+        }
 
         double radius = Math.max(4, Math.min(9, scale * 2));
         for (PixelCoordinate seed : selection.seeds()) {

@@ -72,6 +72,9 @@ class ModelStoreTest {
     @Test
     void pinsTheBuiltInModelsBySizeAndHash() {
         for (SegmentationModel model : SegmentationModel.values()) {
+            if (!model.needsDownload()) {
+                continue;
+            }
             assertEquals("https", model.spec().uri().getScheme());
             assertEquals(64, model.spec().sha256().length());
         }

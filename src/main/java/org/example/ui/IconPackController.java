@@ -9,6 +9,7 @@ import org.example.export.SvgLayers;
 import org.example.model.IconAsset;
 import org.example.model.IconPack;
 import org.example.segmentation.SegmentationException;
+import org.example.segmentation.SegmentationHints;
 import org.example.segmentation.SubjectSegmenter;
 import org.example.vector.*;
 
@@ -154,12 +155,29 @@ public final class IconPackController {
      */
     public void detectSubject(IconAsset icon, SubjectSegmenter segmenter) throws SegmentationException {
         requireOwnedIcon(icon);
-        SubjectMask mask = Objects.requireNonNull(segmenter, "Segmenter is required").segment(icon.image());
+        BackgroundSelection selection = pack.backgroundSelection(icon);
+        SubjectMask mask = Objects.requireNonNull(segmenter, "Segmenter is required").segment(icon.image(),
+                new SegmentationHints(pack.subjectFrame(icon), selection.protectStrokes(), selection.strokes()));
         if (mask.width() != icon.image().getWidth() || mask.height() != icon.image().getHeight()) {
             throw new SegmentationException("Konu maskesi görselle aynı boyutta değil");
         }
         pack.setSubjectMask(icon, mask);
         pack.setKeepSubjectOnly(icon, true);
+    }
+
+    /** Frames the subject for segmenters that use it; {@code null} goes back to the default guess. */
+    public void setSubjectFrame(IconAsset icon, Rectangle frame) {
+        requireOwnedIcon(icon);
+        if (frame != null && (frame.isEmpty()
+                || !new Rectangle(0, 0, icon.image().getWidth(), icon.image().getHeight()).contains(frame))) {
+            throw new IllegalArgumentException("Subject frame must be a non-empty area inside the image");
+        }
+        pack.setSubjectFrame(icon, frame);
+    }
+
+    public Rectangle subjectFrame(IconAsset icon) {
+        requireOwnedIcon(icon);
+        return pack.subjectFrame(icon);
     }
 
     public boolean hasSubjectMask(IconAsset icon) {
