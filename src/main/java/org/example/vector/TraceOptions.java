@@ -7,12 +7,17 @@ import java.util.Objects;
 /**
  * @param simplification 0 keeps every traced detail; higher levels drop tiny specks and fit
  *                       straighter, smoother outlines (up to {@link #MAX_SIMPLIFICATION}).
+ * @param fitShapes      redraw traced circles and ellipses as exact curves and straighten
+ *                       nearly straight edges
+ * @param symmetry       mirror one half of the artwork onto the other before tracing
  */
-public record TraceOptions(ColorMode mode, int maxColors, List<Color> palette, int simplification) {
+public record TraceOptions(ColorMode mode, int maxColors, List<Color> palette, int simplification,
+                           boolean fitShapes, Symmetry symmetry) {
     public static final int MAX_SIMPLIFICATION = 4;
 
     public TraceOptions {
         Objects.requireNonNull(mode, "Color mode is required");
+        Objects.requireNonNull(symmetry, "Symmetry is required");
         palette = List.copyOf(Objects.requireNonNull(palette, "Palette is required"));
         if (maxColors < 1) {
             throw new IllegalArgumentException("Maximum color count must be positive");
@@ -26,6 +31,10 @@ public record TraceOptions(ColorMode mode, int maxColors, List<Color> palette, i
         if (simplification < 0 || simplification > MAX_SIMPLIFICATION) {
             throw new IllegalArgumentException("Simplification must be between 0 and " + MAX_SIMPLIFICATION);
         }
+    }
+
+    public TraceOptions(ColorMode mode, int maxColors, List<Color> palette, int simplification) {
+        this(mode, maxColors, palette, simplification, false, Symmetry.NONE);
     }
 
     public TraceOptions(ColorMode mode, int maxColors, List<Color> palette) {
@@ -42,12 +51,23 @@ public record TraceOptions(ColorMode mode, int maxColors, List<Color> palette, i
     }
 
     public TraceOptions withSimplification(int level) {
-        return new TraceOptions(mode, maxColors, palette, level);
+        return new TraceOptions(mode, maxColors, palette, level, fitShapes, symmetry);
+    }
+
+    public TraceOptions withShapes(boolean fit, Symmetry mirror) {
+        return new TraceOptions(mode, maxColors, palette, simplification, fit, mirror);
     }
 
     public enum ColorMode {
         PRESERVE_SOURCE,
         REDUCE_SOURCE,
         CUSTOM_PALETTE
+    }
+
+    /** Which half is mirrored: the left one across a vertical axis, or the top one across a horizontal axis. */
+    public enum Symmetry {
+        NONE,
+        VERTICAL,
+        HORIZONTAL
     }
 }

@@ -20,7 +20,8 @@ public final class ImageTracerVectorizer implements SvgVectorizer {
             throw new VectorizationException("Vectorization options are required");
         }
 
-        BufferedImage artwork = cropToArtwork(BackgroundRegionProcessor.removeBorderBackground(image));
+        BufferedImage artwork = symmetric(cropToArtwork(BackgroundRegionProcessor.removeBorderBackground(image)),
+                options.symmetry());
         boolean hasTransparency = hasTransparentPixels(artwork);
         boolean mergeBlends = options.simplification() >= 1;
         List<Color> sourceColors = options.mode() == TraceOptions.ColorMode.PRESERVE_SOURCE
@@ -54,7 +55,8 @@ public final class ImageTracerVectorizer implements SvgVectorizer {
             case REDUCE_SOURCE -> encodePalette(reducedColors);
         };
         try {
-            return ImageTracer.imageToSVG(artwork, tracerOptions, palette);
+            String svg = ImageTracer.imageToSVG(artwork, tracerOptions, palette);
+            return options.fitShapes() ? ShapeFitter.fitSvg(svg) : svg;
         } catch (Exception exception) {
             throw new VectorizationException("Could not convert the PNG to SVG paths", exception);
         }
@@ -111,6 +113,28 @@ public final class ImageTracerVectorizer implements SvgVectorizer {
         int right = Math.min(source.getWidth() - 1, maxX + 1);
         int bottom = Math.min(source.getHeight() - 1, maxY + 1);
         return new Rectangle(left, top, right - left + 1, bottom - top + 1);
+    }
+
+    /** Copies the left (or top) half over the other half, mirrored around the image center. */
+    static BufferedImage symmetric(BufferedImage source, TraceOptions.Symmetry symmetry) {
+        if (symmetry == TraceOptions.Symmetry.NONE) {
+            return source;
+        }
+        int width = source.getWidth();
+        int height = source.getHeight();
+        int[] pixels = source.getRGB(0, 0, width, height, null, 0, width);
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                if (symmetry == TraceOptions.Symmetry.VERTICAL && x >= width - width / 2) {
+                    pixels[y * width + x] = pixels[y * width + width - 1 - x];
+                } else if (symmetry == TraceOptions.Symmetry.HORIZONTAL && y >= height - height / 2) {
+                    pixels[y * width + x] = pixels[(height - 1 - y) * width + x];
+                }
+            }
+        }
+        BufferedImage mirrored = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        mirrored.setRGB(0, 0, width, height, pixels, 0, width);
+        return mirrored;
     }
 
     private static BufferedImage cropToArtwork(BufferedImage source) {

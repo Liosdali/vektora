@@ -102,6 +102,8 @@ public final class IconWorkspace extends BorderPane {
     private final CheckBox defringeBox = new CheckBox("Kenar halesini temizle");
     private final Slider detailSlider = new Slider(0, TraceOptions.MAX_SIMPLIFICATION, 0);
     private final Label detailValue = new Label(DETAIL_LEVELS[0]);
+    private final CheckBox fitShapesBox = new CheckBox("Şekilleri oturt");
+    private final ComboBox<String> symmetryBox = new ComboBox<>();
     private final MenuButton exportButton = new MenuButton("Dışa aktar");
     private final Label status = new Label("PNG ikonlarını ekleyerek yeni bir paket oluştur.");
     private final Label packageCount = new Label("0 ikon");
@@ -339,11 +341,23 @@ public final class IconWorkspace extends BorderPane {
         HBox.setHgrow(detailSpacer, Priority.ALWAYS);
         detailValue.getStyleClass().add("value-label");
         HBox detailHeader = new HBox(new Label("Detay"), detailSpacer, detailValue);
+        symmetryBox.getItems().setAll("Simetri yok", "Dikey eksen · sol yarı aynalanır",
+                "Yatay eksen · üst yarı aynalanır");
+        symmetryBox.getSelectionModel().selectFirst();
+        symmetryBox.setMaxWidth(Double.MAX_VALUE);
+        symmetryBox.setAccessibleText("Simetri");
+        fitShapesBox.selectedProperty().addListener((observable, previous, selected) -> updateTraceOptions());
+        symmetryBox.valueProperty().addListener((observable, previous, selected) -> updateTraceOptions());
         colors.getChildren().addAll(colorMode, mutedLabel("Azami renk sayısı"), colorCount,
                 mutedLabel("Yalnızca renk sayısını azaltma modunda kullanılır."),
                 detailHeader, detailSlider,
                 mutedLabel("\"Ayrıntılı\" ve üstü kenar yumuşatmasının ara tonlarını en yakın renge katar. "
                         + "Sadeleştikçe küçük kırıntılar atılır, kenarlar daha düz çizilir, dosya küçülür."),
+                fitShapesBox,
+                mutedLabel("Daireye ya da elipse benzeyen çizgileri kusursuz eğriyle, neredeyse düz kenarları "
+                        + "düz çizgiyle yeniden çizer; tırtıklı kenarlar düzelir."),
+                symmetryBox,
+                mutedLabel("Simetrik logolarda bir yarıyı ötekine aynalar; iki taraf birebir aynı olur."),
                 paletteEditor);
 
         widthField.setPromptText("Genişlik");
@@ -806,6 +820,8 @@ public final class IconWorkspace extends BorderPane {
             }
             detailSlider.setValue(options.simplification());
             detailValue.setText(DETAIL_LEVELS[options.simplification()]);
+            fitShapesBox.setSelected(options.fitShapes());
+            symmetryBox.getSelectionModel().select(options.symmetry().ordinal());
         } finally {
             syncingTraceControls = false;
         }
@@ -851,7 +867,9 @@ public final class IconWorkspace extends BorderPane {
             case CUSTOM_PALETTE -> new TraceOptions(
                     TraceOptions.ColorMode.CUSTOM_PALETTE, palettes.getFirst().size(), palettes.getFirst());
         };
-        controller.setTraceOptions(options.withSimplification(detailLevel()));
+        controller.setTraceOptions(options.withSimplification(detailLevel())
+                .withShapes(fitShapesBox.isSelected(), TraceOptions.Symmetry.values()[
+                        Math.max(0, symmetryBox.getSelectionModel().getSelectedIndex())]));
         markDirty();
         refreshPreview(iconList.getSelectionModel().getSelectedItem());
     }

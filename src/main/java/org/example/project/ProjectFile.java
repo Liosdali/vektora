@@ -208,12 +208,16 @@ public final class ProjectFile {
         node.put("maxColors", options.maxColors());
         node.set("palette", colors(options.palette()));
         node.put("simplification", options.simplification());
+        node.put("fitShapes", options.fitShapes());
+        node.put("symmetry", options.symmetry().name());
         return node;
     }
 
     private static TraceOptions traceOptions(JsonNode node) {
         return new TraceOptions(TraceOptions.ColorMode.valueOf(node.get("mode").asText()),
-                node.get("maxColors").asInt(), colors(node.path("palette")), node.path("simplification").asInt(0));
+                node.get("maxColors").asInt(), colors(node.path("palette")), node.path("simplification").asInt(0),
+                node.path("fitShapes").asBoolean(false),
+                TraceOptions.Symmetry.valueOf(node.path("symmetry").asText("NONE")));
     }
 
     private static ObjectNode selection(BackgroundSelection selection) {

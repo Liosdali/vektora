@@ -54,7 +54,7 @@ class ProjectFileTest {
         }
         original.detectSubject(moon, image -> new SubjectMask(48, 48, maskValues));
         original.setSubjectFrame(moon, new Rectangle(4, 4, 40, 40));
-        original.setTraceOptions(new TraceOptions(TraceOptions.ColorMode.REDUCE_SOURCE, 6, List.of(), 2));
+        original.setTraceOptions(new TraceOptions(TraceOptions.ColorMode.REDUCE_SOURCE, 6, List.of(), 2, true, TraceOptions.Symmetry.VERTICAL));
         original.setExportSettings(new SvgExportSettings(96, 64, 0.8, true, true, 1));
         original.setPalettes(List.of(List.of(Color.RED, new Color(10, 20, 30, 128))));
         String sunLayer = original.previewWithLayers(sun).layers().getFirst().color();
@@ -82,6 +82,7 @@ class ProjectFileTest {
         assertEquals(original.backgroundSelection(moon), reopened.backgroundSelection(reopenedMoon));
         assertEquals(original.pack().palettes(), reopened.pack().palettes());
         assertEquals(original.pack().exportSettings(), reopened.pack().exportSettings());
+        assertEquals(original.pack().traceOptions(), reopened.pack().traceOptions());
         IconAsset reopenedSun = reopened.pack().icons().getFirst();
         assertEquals(original.layerNames(sun), reopened.layerNames(reopenedSun));
         assertEquals(original.layerOrder(sun), reopened.layerOrder(reopenedSun));
