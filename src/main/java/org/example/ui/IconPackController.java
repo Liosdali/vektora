@@ -1,36 +1,29 @@
 package org.example.ui;
 
-import java.awt.Color;
-import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.IdentityHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Locale;
-import java.util.Objects;
-import javax.imageio.ImageIO;
 import org.example.export.ExportFormat;
 import org.example.export.IconVariant;
 import org.example.export.SvgExportService;
 import org.example.export.SvgExportSettings;
 import org.example.model.IconAsset;
 import org.example.model.IconPack;
-import org.example.vector.BackgroundRegionProcessor;
-import org.example.vector.PixelCoordinate;
-import org.example.vector.SvgVectorizer;
-import org.example.vector.TraceOptions;
-import org.example.vector.VectorizationException;
+import org.example.vector.*;
+
+import javax.imageio.ImageIO;
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.*;
+import java.util.List;
 
 public final class IconPackController {
     private static final byte[] PNG_SIGNATURE = {
             (byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a
     };
+
+    private static final byte[] JPEG_SIGNATURE = {(byte) 0xff, (byte) 0xd8, (byte) 0xff};
 
     private final IconPack pack;
     private final SvgVectorizer vectorizer;
@@ -54,20 +47,28 @@ public final class IconPackController {
                 throw new IllegalArgumentException("PNG path list must not contain null entries");
             }
             try {
-                if (!path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".png")) {
-                    throw new IOException("Yalnızca PNG dosyaları eklenebilir");
+                String fileName = path.getFileName().toString();
+                String lowerName = fileName.toLowerCase(Locale.ROOT);
+                int extensionLength;
+                boolean png = lowerName.endsWith(".png");
+                if (png) {
+                    extensionLength = 4;
+                } else if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) {
+                    extensionLength = lowerName.endsWith(".jpeg") ? 5 : 4;
+                } else {
+                    throw new IOException("Yalnızca PNG veya JPG dosyaları eklenebilir");
                 }
+                byte[] signature = png ? PNG_SIGNATURE : JPEG_SIGNATURE;
                 try (InputStream input = Files.newInputStream(path)) {
-                    if (!Arrays.equals(PNG_SIGNATURE, input.readNBytes(PNG_SIGNATURE.length))) {
-                        throw new IOException("Dosya geçerli bir PNG görseli değil");
+                    if (!Arrays.equals(signature, input.readNBytes(signature.length))) {
+                        throw new IOException("Dosya geçerli bir PNG veya JPG görseli değil");
                     }
                 }
                 BufferedImage image = ImageIO.read(path.toFile());
                 if (image == null || image.getWidth() <= 0 || image.getHeight() <= 0) {
-                    throw new IOException("Dosya geçerli bir PNG görseli değil");
+                    throw new IOException("Dosya geçerli bir PNG veya JPG görseli değil");
                 }
-                String fileName = path.getFileName().toString();
-                String name = fileName.substring(0, fileName.length() - 4);
+                String name = fileName.substring(0, fileName.length() - extensionLength);
                 pack.addIcon(new IconAsset(path, name, image));
             } catch (IOException | SecurityException exception) {
                 String reason = exception.getMessage();
@@ -111,6 +112,23 @@ public final class IconPackController {
         return pack.backgroundRemovalSeeds(icon);
     }
 
+    public void addEraseStroke(IconAsset icon, EraseStroke stroke) {
+        requireOwnedIcon(icon);
+        Objects.requireNonNull(stroke, "Erase stroke is required");
+        for (PixelCoordinate point : stroke.points()) {
+            if (point.x() < 0 || point.y() < 0
+                    || point.x() >= icon.image().getWidth() || point.y() >= icon.image().getHeight()) {
+                throw new IllegalArgumentException("Erase stroke must be inside the source image");
+            }
+        }
+        pack.addEraseStroke(icon, stroke);
+    }
+
+    public List<EraseStroke> eraseStrokes(IconAsset icon) {
+        requireOwnedIcon(icon);
+        return pack.eraseStrokes(icon);
+    }
+
     public void clearBackgroundRemovalSeeds(IconAsset icon) {
         requireOwnedIcon(icon);
         pack.clearBackgroundRemovalSeeds(icon);
@@ -131,10 +149,10 @@ public final class IconPackController {
         export(destination, format, backgroundRemovalSnapshot());
     }
 
-    public Map<IconAsset, List<PixelCoordinate>> backgroundRemovalSnapshot() {
-        Map<IconAsset, List<PixelCoordinate>> snapshot = new IdentityHashMap<>();
+    public Map<IconAsset, BackgroundSelection> backgroundRemovalSnapshot() {
+        Map<IconAsset, BackgroundSelection> snapshot = new IdentityHashMap<>();
         for (IconAsset icon : pack.icons()) {
-            snapshot.put(icon, pack.backgroundRemovalSeeds(icon));
+            snapshot.put(icon, pack.backgroundSelection(icon));
         }
         return Collections.unmodifiableMap(snapshot);
     }
@@ -142,25 +160,25 @@ public final class IconPackController {
     public void export(
             Path destination,
             ExportFormat format,
-            Map<IconAsset, List<PixelCoordinate>> backgroundSelections)
+            Map<IconAsset, BackgroundSelection> backgroundSelections)
             throws IOException, VectorizationException {
         Objects.requireNonNull(backgroundSelections, "Background selections are required");
         List<IconVariant> variants = new ArrayList<>();
         for (IconAsset icon : pack.icons()) {
-            List<PixelCoordinate> seeds = backgroundSelections.getOrDefault(icon, List.of());
-            variants.addAll(createVariants(icon, seeds));
+            BackgroundSelection selection =
+                    backgroundSelections.getOrDefault(icon, BackgroundSelection.EMPTY);
+            variants.addAll(createVariants(icon, selection));
         }
         exportService.export(variants, pack.exportSettings(), destination, format);
     }
 
     private List<IconVariant> createVariants(IconAsset icon) throws VectorizationException {
-        return createVariants(icon, pack.backgroundRemovalSeeds(icon));
+        return createVariants(icon, pack.backgroundSelection(icon));
     }
 
-    private List<IconVariant> createVariants(IconAsset icon, List<PixelCoordinate> seeds)
+    private List<IconVariant> createVariants(IconAsset icon, BackgroundSelection selection)
             throws VectorizationException {
-        BufferedImage image = BackgroundRegionProcessor.removeSelectedRegions(
-                icon.image(), seeds);
+        BufferedImage image = BackgroundRegionProcessor.removeSelection(icon.image(), selection);
         List<List<Color>> palettes = pack.palettes();
         if (pack.traceOptions().mode() == TraceOptions.ColorMode.CUSTOM_PALETTE && !palettes.isEmpty()) {
             List<IconVariant> variants = new ArrayList<>(palettes.size());

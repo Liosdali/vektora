@@ -1,14 +1,34 @@
 package org.example.vector;
 
+import org.junit.jupiter.api.Test;
+
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import java.awt.Color;
-import java.awt.image.BufferedImage;
-import java.util.List;
-import org.junit.jupiter.api.Test;
-
 class BackgroundRegionProcessorTest {
+    @Test
+    void erasesDrawnStrokeAcrossDifferentColorsAndKeepsEverythingElse() {
+        BufferedImage source = image(9, 5);
+        fill(source, 0, 0, 9, 5, Color.RED);
+        fill(source, 4, 0, 5, 5, Color.BLUE);
+
+        BufferedImage result = BackgroundRegionProcessor.removeSelection(source,
+                new BackgroundSelection(List.of(), List.of(new EraseStroke(
+                        List.of(new PixelCoordinate(2, 2), new PixelCoordinate(6, 2)), 1))));
+
+        assertEquals(0, alpha(result, 2, 2));
+        assertEquals(0, alpha(result, 4, 2));
+        assertEquals(0, alpha(result, 6, 2));
+        assertEquals(0, alpha(result, 4, 1));
+        assertEquals(255, alpha(result, 0, 0));
+        assertEquals(255, alpha(result, 8, 4));
+        assertEquals(255, alpha(source, 4, 2));
+    }
+
     @Test
     void removesOnlyTheConnectedRegionMatchingTheSelectedSeed() {
         BufferedImage source = image(7, 3);

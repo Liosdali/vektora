@@ -1,17 +1,21 @@
 package org.example.model;
 
-import java.awt.Color;
+import org.example.export.SvgExportSettings;
+import org.example.vector.BackgroundSelection;
+import org.example.vector.EraseStroke;
+import org.example.vector.PixelCoordinate;
+import org.example.vector.TraceOptions;
+
+import java.awt.*;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import org.example.export.SvgExportSettings;
-import org.example.vector.PixelCoordinate;
-import org.example.vector.TraceOptions;
 
 public final class IconPack {
     private final List<IconAsset> icons = new ArrayList<>();
     private final Map<IconAsset, List<PixelCoordinate>> backgroundRemovalSeeds = new IdentityHashMap<>();
+    private final Map<IconAsset, List<EraseStroke>> eraseStrokes = new IdentityHashMap<>();
     private TraceOptions traceOptions = TraceOptions.preserveSourceColors();
     private SvgExportSettings exportSettings = new SvgExportSettings(128, 128, 1);
     private List<List<Color>> palettes = List.of();
@@ -50,6 +54,21 @@ public final class IconPack {
 
     public synchronized void clearBackgroundRemovalSeeds(IconAsset icon) {
         backgroundRemovalSeeds.remove(icon);
+        eraseStrokes.remove(icon);
+    }
+
+    public synchronized void addEraseStroke(IconAsset icon, EraseStroke stroke) {
+        List<EraseStroke> strokes = new ArrayList<>(eraseStrokes(icon));
+        strokes.add(stroke);
+        eraseStrokes.put(icon, List.copyOf(strokes));
+    }
+
+    public synchronized List<EraseStroke> eraseStrokes(IconAsset icon) {
+        return eraseStrokes.getOrDefault(icon, List.of());
+    }
+
+    public synchronized BackgroundSelection backgroundSelection(IconAsset icon) {
+        return new BackgroundSelection(backgroundRemovalSeeds(icon), eraseStrokes(icon));
     }
 
     public void setTraceOptions(TraceOptions traceOptions) {

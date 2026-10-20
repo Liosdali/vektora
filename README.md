@@ -21,7 +21,8 @@ mvn test
 
 ## Kullanım
 
-1. **PNG ekle** ile bir veya daha fazla ikon dosyası seç. Geçerli görseller pakete eklenir; okunamayan dosyalar ayrıca bildirilir.
+1. **PNG/JPG ekle** ile bir veya daha fazla ikon dosyası seç (.png, .jpg, .jpeg). Geçerli görseller pakete eklenir;
+   okunamayan dosyalar ayrıca bildirilir.
 2. Soldaki listeden bir ikon seçerek SVG önizlemesini aç.
 3. **Paket ayarları** altında SVG tuval genişliğini/yüksekliğini ve görünür ikon ölçeğini ayarla. Örneğin `0.5`, ikonu tuval içinde yarı boyuta getirir.
 4. **Vektör ve renk** menüsünden kaynak renklerini koru, kaynak renk sayısını azalt veya özel paletleri kullan seçeneklerinden birini seç.
@@ -34,6 +35,12 @@ SVG çıktısı piksel çözünürlüğünden bağımsızdır; genişlik, yükse
 
 Vektörleştirme, şeffaf kenar boşluklarını kırpar ve kenarlarda baskın olan düz arka plan rengini (yakın tonlarıyla birlikte) şeffaflaştırır. Tek renkli özel palet, şeffaf arka planı koruyarak yalnızca çizimi renklendirir.
 
-Rozet veya ikon içindeki kapalı arka plan alanlarını temizlemek için ikonu seçip **Arka plan bölgelerini seç** düğmesine tıkla. Kaynak PNG'de silmek istediğin bağlı renk alanını seç; gerekirse diğer alanlar için tekrar tıkla. Seçilen pikselin renginden her kanalda en fazla 24 farklı olan, dört yönden bağlı pikseller saydamlaştırılır; kopuk ama aynı renkteki alanlar korunur. **Seçimleri temizle** yalnızca seçili ikonun seçimlerini sıfırlar. Bu seçimler önizlemeye, SVG dosyalarına, sprite'a ve ZIP'e birlikte uygulanır. Otomatik algılama veya tek renk paleti kuş, yazı ya da benzeri nesneleri anlamsal olarak tanımaz; karmaşık görsellerde kaldırılacak bölgeleri kullanıcı seçmelidir.
+Rozet veya ikon içindeki kapalı arka plan alanlarını temizlemek için ikonu seçip **Arka plan bölgelerini seç** düğmesine
+tıkla. Kaynak PNG'de silmek istediğin bağlı renk alanını seç; gerekirse diğer alanlar için tekrar tıkla. Seçilen
+pikselin renginden her kanalda en fazla 24 farklı olan, dört yönden bağlı pikseller saydamlaştırılır; kopuk ama aynı
+renkteki alanlar korunur. **Seçimleri temizle** yalnızca seçili ikonun seçimlerini sıfırlar. Seçim ekranındaki **Çizerek
+sil** modunda fareyle boyadığın alan (fırça boyutu ayarlanabilir) renginden bağımsız olarak saydamlaştırılır. Bu
+seçimler önizlemeye, SVG dosyalarına, sprite'a ve ZIP'e birlikte uygulanır. Otomatik algılama veya tek renk paleti kuş,
+yazı ya da benzeri nesneleri anlamsal olarak tanımaz; karmaşık görsellerde kaldırılacak bölgeleri kullanıcı seçmelidir.
 
 İşleme yereldir; PNG görselleri bilgisayardan dışarı gönderilmez. Vektörleştirme kütüphanesinin lisansı `src/main/resources/META-INF/third-party/imagetracerjava-LICENSE.txt` dosyasındadır.

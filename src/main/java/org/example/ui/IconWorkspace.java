@@ -1,45 +1,34 @@
 package org.example.ui;
 
-import java.awt.Color;
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Path;
-import java.util.List;
-import java.util.function.Consumer;
-import java.util.function.BooleanSupplier;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.control.Alert;
+import javafx.scene.control.*;
 import javafx.scene.control.Button;
-import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
-import javafx.scene.control.ListCell;
-import javafx.scene.control.ListView;
-import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
-import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.ScrollPane;
-import javafx.scene.control.Separator;
-import javafx.scene.control.Spinner;
 import javafx.scene.control.TextField;
-import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
-import javafx.scene.layout.StackPane;
-import javafx.scene.layout.VBox;
+import javafx.scene.layout.*;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.Window;
-import javafx.collections.FXCollections;
-import javafx.collections.ObservableList;
 import org.example.export.ExportFormat;
 import org.example.export.IconVariant;
 import org.example.export.SvgExportSettings;
 import org.example.model.IconAsset;
 import org.example.vector.TraceOptions;
 import org.example.vector.VectorizationException;
+
+import java.awt.*;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 public final class IconWorkspace extends BorderPane {
     private final IconPackController controller;
@@ -54,7 +43,7 @@ public final class IconWorkspace extends BorderPane {
     private final TextField widthField = new TextField("128");
     private final TextField heightField = new TextField("128");
     private final TextField scaleField = new TextField("1.0");
-    private final Button importButton = new Button("PNG ekle");
+    private final Button importButton = new Button("PNG/JPG ekle");
     private final Button selectBackgroundButton = new Button("Arka plan bölgelerini seç");
     private final Button showSvgPreviewButton = new Button("SVG önizlemesine dön");
     private final Button clearBackgroundButton = new Button("Seçimleri temizle");
@@ -245,8 +234,9 @@ public final class IconWorkspace extends BorderPane {
 
     private void choosePngs() {
         FileChooser chooser = new FileChooser();
-        chooser.setTitle("PNG ikonlarını seç");
-        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PNG görseller", "*.png"));
+        chooser.setTitle("PNG veya JPG ikonlarını seç");
+        chooser.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter("PNG ve JPG görseller", "*.png", "*.jpg", "*.jpeg"));
         List<File> files = chooser.showOpenMultipleDialog(getWindow());
         if (files == null || files.isEmpty()) {
             return;
@@ -408,12 +398,19 @@ public final class IconWorkspace extends BorderPane {
     }
 
     private void loadBackgroundPicker(IconAsset icon) {
-        backgroundPicker.setSource(icon, controller.backgroundRemovalSeeds(icon), seed -> {
+        backgroundPicker.setSource(icon, controller.backgroundRemovalSeeds(icon),
+                controller.eraseStrokes(icon), seed -> {
             controller.addBackgroundRemovalSeed(icon, seed);
             loadBackgroundPicker(icon);
             refreshPreview(icon);
             updateBackgroundControls(icon);
             status.setText("Bağlı arka plan bölgesi seçildi.");
+                }, stroke -> {
+                    controller.addEraseStroke(icon, stroke);
+                    loadBackgroundPicker(icon);
+                    refreshPreview(icon);
+                    updateBackgroundControls(icon);
+                    status.setText("Çizilen alan silindi.");
         });
     }
 
@@ -435,8 +432,9 @@ public final class IconWorkspace extends BorderPane {
         boolean hasIcon = icon != null;
         selectBackgroundButton.setDisable(!hasIcon);
         showSvgPreviewButton.setDisable(!selectingBackground);
-        clearBackgroundButton.setDisable(
-                !hasIcon || controller.backgroundRemovalSeeds(icon).isEmpty());
+        clearBackgroundButton.setDisable(!hasIcon
+                || (controller.backgroundRemovalSeeds(icon).isEmpty()
+                && controller.eraseStrokes(icon).isEmpty()));
     }
 
     private <T> void runTask(Task<T> task, Consumer<T> onSuccess, String busyMessage) {
@@ -453,16 +451,18 @@ public final class IconWorkspace extends BorderPane {
         progress.setVisible(true);
         status.setText(busyMessage);
         task.setOnSucceeded(event -> {
-            if (!completionIsCurrent.getAsBoolean()) {
-                return;
-            }
             progress.setVisible(false);
             importButton.setDisable(false);
             exportButton.setDisable(icons.isEmpty());
-            onSuccess.accept(task.getValue());
+            if (completionIsCurrent.getAsBoolean()) {
+                onSuccess.accept(task.getValue());
+            }
         });
         task.setOnFailed(event -> {
             if (!completionIsCurrent.getAsBoolean()) {
+                progress.setVisible(false);
+                importButton.setDisable(false);
+                exportButton.setDisable(icons.isEmpty());
                 return;
             }
             progress.setVisible(false);

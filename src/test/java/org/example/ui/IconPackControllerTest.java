@@ -1,18 +1,5 @@
 package org.example.ui;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.awt.Color;
-import java.awt.image.BufferedImage;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.List;
-import java.util.stream.Stream;
-import javax.imageio.ImageIO;
 import org.example.export.ExportFormat;
 import org.example.export.SvgExportService;
 import org.example.export.SvgExportSettings;
@@ -24,7 +11,51 @@ import org.example.vector.TraceOptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import javax.imageio.ImageIO;
+import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.stream.Stream;
+
+import static org.junit.jupiter.api.Assertions.*;
+
 class IconPackControllerTest {
+    @Test
+    void importsJpgAndJpegFilesAndStripsTheirExtensions(@TempDir Path directory) throws Exception {
+        Path jpg = directory.resolve("photo.jpg");
+        Path jpeg = directory.resolve("shot.JPEG");
+        ImageIO.write(new BufferedImage(8, 8, BufferedImage.TYPE_INT_RGB), "jpeg", jpg.toFile());
+        ImageIO.write(new BufferedImage(8, 8, BufferedImage.TYPE_INT_RGB), "jpeg", jpeg.toFile());
+        IconPackController controller = controller();
+
+        List<ImportIssue> issues = controller.addImages(List.of(jpg, jpeg));
+
+        assertTrue(issues.isEmpty());
+        assertEquals(List.of("photo", "shot"),
+                controller.pack().icons().stream().map(IconAsset::name).toList());
+    }
+
+    @Test
+    void appliesDrawnEraseStrokesToPreview(@TempDir Path directory) throws Exception {
+        Path source = writePng(directory.resolve("sun.png"), Color.ORANGE);
+        IconPackController controller = controller();
+        controller.addImages(List.of(source));
+        IconAsset icon = controller.pack().icons().getFirst();
+        String before = controller.preview(icon).getFirst().svg();
+
+        controller.addEraseStroke(icon, new org.example.vector.EraseStroke(
+                List.of(new PixelCoordinate(0, 0), new PixelCoordinate(3, 3)), 2));
+
+        assertEquals(1, controller.eraseStrokes(icon).size());
+        assertFalse(before.equals(controller.preview(icon).getFirst().svg()));
+        assertThrows(IllegalArgumentException.class, () -> controller.addEraseStroke(icon,
+                new org.example.vector.EraseStroke(List.of(new PixelCoordinate(999, 0)), 1)));
+        controller.clearBackgroundRemovalSeeds(icon);
+        assertTrue(controller.eraseStrokes(icon).isEmpty());
+    }
+
     @Test
     void addsValidPngsAndReportsInvalidFilesWithoutLosingGoodImages(@TempDir Path directory)
             throws Exception {

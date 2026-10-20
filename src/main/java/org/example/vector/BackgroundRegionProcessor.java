@@ -1,11 +1,7 @@
 package org.example.vector;
 
 import java.awt.image.BufferedImage;
-import java.util.ArrayDeque;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.function.Consumer;
 
 public final class BackgroundRegionProcessor {
@@ -16,13 +12,17 @@ public final class BackgroundRegionProcessor {
 
     public static BufferedImage removeSelectedRegions(
             BufferedImage source, List<PixelCoordinate> seeds) {
+        return removeSelection(source, new BackgroundSelection(seeds, List.of()));
+    }
+
+    public static BufferedImage removeSelection(BufferedImage source, BackgroundSelection selection) {
         Objects.requireNonNull(source, "Source image is required");
-        Objects.requireNonNull(seeds, "Background seeds are required");
+        Objects.requireNonNull(selection, "Background selection is required");
 
         int width = source.getWidth();
         int height = source.getHeight();
         boolean[] removed = new boolean[width * height];
-        for (PixelCoordinate seed : seeds) {
+        for (PixelCoordinate seed : selection.seeds()) {
             Objects.requireNonNull(seed, "Background seed is required");
             validateSeed(seed, width, height);
             int seedPixel = source.getRGB(seed.x(), seed.y());
@@ -31,8 +31,40 @@ public final class BackgroundRegionProcessor {
             }
             collectConnectedRegion(source, seed.x(), seed.y(), seedPixel, removed);
         }
+        for (EraseStroke stroke : selection.strokes()) {
+            paintStroke(stroke, width, height, removed);
+        }
 
         return transparentRemovedPixels(source, removed);
+    }
+
+    private static void paintStroke(EraseStroke stroke, int width, int height, boolean[] removed) {
+        List<PixelCoordinate> points = stroke.points();
+        PixelCoordinate previous = points.getFirst();
+        stamp(previous.x(), previous.y(), stroke.radius(), width, height, removed);
+        for (int index = 1; index < points.size(); index++) {
+            PixelCoordinate next = points.get(index);
+            int steps = Math.max(Math.abs(next.x() - previous.x()), Math.abs(next.y() - previous.y()));
+            for (int step = 1; step <= steps; step++) {
+                int x = previous.x() + Math.round((float) (next.x() - previous.x()) * step / steps);
+                int y = previous.y() + Math.round((float) (next.y() - previous.y()) * step / steps);
+                stamp(x, y, stroke.radius(), width, height, removed);
+            }
+            previous = next;
+        }
+    }
+
+    private static void stamp(
+            int centerX, int centerY, int radius, int width, int height, boolean[] removed) {
+        for (int y = Math.max(0, centerY - radius); y <= Math.min(height - 1, centerY + radius); y++) {
+            for (int x = Math.max(0, centerX - radius); x <= Math.min(width - 1, centerX + radius); x++) {
+                int dx = x - centerX;
+                int dy = y - centerY;
+                if (dx * dx + dy * dy <= radius * radius) {
+                    removed[y * width + x] = true;
+                }
+            }
+        }
     }
 
     public static BufferedImage removeBorderBackground(BufferedImage source) {
