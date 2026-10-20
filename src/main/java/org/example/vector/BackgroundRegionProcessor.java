@@ -6,7 +6,8 @@ import java.util.function.Consumer;
 import java.util.function.IntPredicate;
 
 public final class BackgroundRegionProcessor {
-    private static final int BORDER_TOLERANCE = 24;
+    /** CIE76 ΔE allowed between the border background color and the pixels it removes. */
+    private static final int BORDER_TOLERANCE = 12;
     private static final int BORDER_BUCKET_MASK = 0x00f0f0f0;
     private static final int MIN_MATTE_CONTRAST_SQUARED = 30 * 30;
     private static final int MAX_MATTE_RESIDUAL_SQUARED = 40 * 40;
@@ -139,10 +140,11 @@ public final class BackgroundRegionProcessor {
         int backgroundRgb = (int) (dominantBucket[1] / dominantBucket[0]) << 16
                 | (int) (dominantBucket[2] / dominantBucket[0]) << 8
                 | (int) (dominantBucket[3] / dominantBucket[0]);
+        double[] backgroundLab = LabColor.lab(backgroundRgb);
         long backgroundCount = 0;
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                if (matchesBackground(source.getRGB(x, y), backgroundRgb, true, BORDER_TOLERANCE)) {
+                if (matchesBackground(source.getRGB(x, y), backgroundLab, true, BORDER_TOLERANCE)) {
                     backgroundCount++;
                 }
             }
@@ -155,12 +157,12 @@ public final class BackgroundRegionProcessor {
         Consumer<PixelCoordinate> collectFromBorder = seed -> collectConnectedRegion(
                 source, seed.x(), seed.y(), backgroundRgb, removed, true, BORDER_TOLERANCE);
         for (int x = 0; x < width; x++) {
-            collectIfBackground(source, x, 0, backgroundRgb, collectFromBorder);
-            collectIfBackground(source, x, height - 1, backgroundRgb, collectFromBorder);
+            collectIfBackground(source, x, 0, backgroundLab, collectFromBorder);
+            collectIfBackground(source, x, height - 1, backgroundLab, collectFromBorder);
         }
         for (int y = 1; y < height - 1; y++) {
-            collectIfBackground(source, 0, y, backgroundRgb, collectFromBorder);
-            collectIfBackground(source, width - 1, y, backgroundRgb, collectFromBorder);
+            collectIfBackground(source, 0, y, backgroundLab, collectFromBorder);
+            collectIfBackground(source, width - 1, y, backgroundLab, collectFromBorder);
         }
 
         return transparentRemovedPixels(source, removed, removed.clone(), new boolean[removed.length]);
@@ -173,8 +175,9 @@ public final class BackgroundRegionProcessor {
         int height = source.getHeight();
         ArrayDeque<Integer> queue = new ArrayDeque<>();
         int seedIndex = seedY * width + seedX;
+        double[] seedLab = LabColor.lab(seedRgb);
         if (removed[seedIndex]
-                || !matchesBackground(source.getRGB(seedX, seedY), seedRgb, opaqueOnly, tolerance)) {
+                || !matchesBackground(source.getRGB(seedX, seedY), seedLab, opaqueOnly, tolerance)) {
             return;
         }
         removed[seedIndex] = true;
@@ -185,25 +188,25 @@ public final class BackgroundRegionProcessor {
             int x = index % width;
             int y = index / width;
             if (x > 0) {
-                enqueueIfMatching(source, x - 1, y, seedRgb, opaqueOnly, tolerance, removed, queue);
+                enqueueIfMatching(source, x - 1, y, seedLab, opaqueOnly, tolerance, removed, queue);
             }
             if (x + 1 < width) {
-                enqueueIfMatching(source, x + 1, y, seedRgb, opaqueOnly, tolerance, removed, queue);
+                enqueueIfMatching(source, x + 1, y, seedLab, opaqueOnly, tolerance, removed, queue);
             }
             if (y > 0) {
-                enqueueIfMatching(source, x, y - 1, seedRgb, opaqueOnly, tolerance, removed, queue);
+                enqueueIfMatching(source, x, y - 1, seedLab, opaqueOnly, tolerance, removed, queue);
             }
             if (y + 1 < height) {
-                enqueueIfMatching(source, x, y + 1, seedRgb, opaqueOnly, tolerance, removed, queue);
+                enqueueIfMatching(source, x, y + 1, seedLab, opaqueOnly, tolerance, removed, queue);
             }
         }
     }
 
     private static void enqueueIfMatching(
-            BufferedImage source, int x, int y, int seedRgb, boolean opaqueOnly, int tolerance,
+            BufferedImage source, int x, int y, double[] seedLab, boolean opaqueOnly, int tolerance,
             boolean[] removed, ArrayDeque<Integer> queue) {
         int index = y * source.getWidth() + x;
-        if (!removed[index] && matchesBackground(source.getRGB(x, y), seedRgb, opaqueOnly, tolerance)) {
+        if (!removed[index] && matchesBackground(source.getRGB(x, y), seedLab, opaqueOnly, tolerance)) {
             removed[index] = true;
             queue.addLast(index);
         }
@@ -346,8 +349,8 @@ public final class BackgroundRegionProcessor {
     }
 
     private static void collectIfBackground(
-            BufferedImage source, int x, int y, int backgroundRgb, Consumer<PixelCoordinate> consumer) {
-        if (matchesBackground(source.getRGB(x, y), backgroundRgb, true, BORDER_TOLERANCE)) {
+            BufferedImage source, int x, int y, double[] backgroundLab, Consumer<PixelCoordinate> consumer) {
+        if (matchesBackground(source.getRGB(x, y), backgroundLab, true, BORDER_TOLERANCE)) {
             consumer.accept(new PixelCoordinate(x, y));
         }
     }
@@ -364,14 +367,13 @@ public final class BackgroundRegionProcessor {
         return 0;
     }
 
-    private static boolean matchesBackground(int pixel, int seedRgb, boolean opaqueOnly, int tolerance) {
+    /** Whether the pixel is visible and within {@code tolerance} CIE76 ΔE of the seed color. */
+    private static boolean matchesBackground(int pixel, double[] seedLab, boolean opaqueOnly, int tolerance) {
         int alpha = pixel >>> 24;
         if ((opaqueOnly && alpha != 255) || (!opaqueOnly && alpha == 0)) {
             return false;
         }
-        return Math.abs(((pixel >>> 16) & 0xff) - ((seedRgb >>> 16) & 0xff)) <= tolerance
-                && Math.abs(((pixel >>> 8) & 0xff) - ((seedRgb >>> 8) & 0xff)) <= tolerance
-                && Math.abs((pixel & 0xff) - (seedRgb & 0xff)) <= tolerance;
+        return LabColor.deltaE(LabColor.lab(pixel), seedLab) <= tolerance;
     }
 
     /**
@@ -397,6 +399,7 @@ public final class BackgroundRegionProcessor {
                 continue;
             }
             int seedRgb = pixels[start];
+            double[] seedLab = LabColor.lab(seedRgb);
             int size = 0;
             int count = 0;
             boolean touchesBorder = false;
@@ -413,7 +416,7 @@ public final class BackgroundRegionProcessor {
                         y > 0 ? index - width : -1, y + 1 < height ? index + width : -1};
                 for (int neighbor : neighbors) {
                     if (neighbor >= 0 && !claimed[neighbor]
-                            && matchesBackground(pixels[neighbor], seedRgb, false, tolerance)) {
+                            && matchesBackground(pixels[neighbor], seedLab, false, tolerance)) {
                         claimed[neighbor] = true;
                         stack[size++] = neighbor;
                     }

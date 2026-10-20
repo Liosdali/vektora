@@ -105,6 +105,20 @@ class BackgroundRegionProcessorTest {
     }
 
     @Test
+    void toleranceComparesPerceivedDifferenceRatherThanChannelDistance() {
+        BufferedImage source = image(3, 1);
+        source.setRGB(0, 0, new Color(60, 40, 160).getRGB());
+        source.setRGB(1, 0, new Color(30, 40, 160).getRGB());
+        source.setRGB(2, 0, new Color(30, 40, 190).getRGB());
+
+        BufferedImage result = BackgroundRegionProcessor.removeSelection(source,
+                BackgroundSelection.EMPTY.withSeed(new PixelCoordinate(1, 0)).withTolerance(12));
+
+        assertEquals(0, alpha(result, 0, 0));
+        assertEquals(255, alpha(result, 2, 0));
+    }
+
+    @Test
     void higherToleranceRemovesColorsFurtherFromTheSeed() {
         BufferedImage source = image(3, 1);
         source.setRGB(0, 0, new Color(100, 100, 100).getRGB());

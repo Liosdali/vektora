@@ -262,7 +262,8 @@ public final class IconWorkspace extends BorderPane {
                 mutedLabel("Yerel model: görselin bilgisayardan çıkmaz. Model ilk kullanımda bir kez indirilir."),
                 keepSubjectBox, new Separator(), selectBackgroundButton, showSvgPreviewButton,
                 toleranceHeader, toleranceSlider,
-                mutedLabel("Yüksek değer, tıklanan renge daha uzak tonları da siler."),
+                mutedLabel("Göze göre fark (ΔE): 2 zor fark edilir, 10 açıkça farklıdır. "
+                        + "Yüksek değer, tıklanan renge daha uzak tonları da siler."),
                 defringeBox,
                 mutedLabel("Silinen zemine karışmış kenar piksellerini temizler; "
                         + "logonun etrafında ince renkli çerçeve kalmaz."),

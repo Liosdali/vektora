@@ -11,8 +11,9 @@ public record BackgroundSelection(
         int tolerance,
         boolean defringe,
         boolean keepSubjectOnly) {
-    public static final int DEFAULT_TOLERANCE = 24;
-    public static final int MAX_TOLERANCE = 128;
+    /** Tolerances are CIE76 ΔE distances from the clicked color. */
+    public static final int DEFAULT_TOLERANCE = 12;
+    public static final int MAX_TOLERANCE = 60;
     public static final BackgroundSelection EMPTY = new BackgroundSelection(List.of(), List.of());
 
     public BackgroundSelection {
