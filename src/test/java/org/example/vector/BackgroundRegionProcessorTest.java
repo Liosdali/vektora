@@ -119,6 +119,53 @@ class BackgroundRegionProcessorTest {
     }
 
     @Test
+    void followingTheGradientSelectsASlowNoisyRampWithOneClick() {
+        BufferedImage source = image(140, 20);
+        int[] noise = {0, 3, -2, 4, -3, 1, -4, 2};
+        for (int y = 0; y < 20; y++) {
+            for (int x = 0; x < 120; x++) {
+                int gray = 255 - x * 45 / 119 + noise[(x * 3 + y * 5) % noise.length];
+                source.setRGB(x, y, new Color(Math.min(255, gray), Math.min(255, gray), Math.min(255, gray)).getRGB());
+            }
+        }
+        fill(source, 120, 0, 20, 20, NAVY);
+        PixelCoordinate click = new PixelCoordinate(0, 10);
+
+        BufferedImage fixedSeed = BackgroundRegionProcessor.removeSelection(source,
+                BackgroundSelection.EMPTY.withSeed(click).withDefringe(false));
+        BufferedImage followed = BackgroundRegionProcessor.removeSelection(source,
+                BackgroundSelection.EMPTY.withSeed(new RegionSeed(click, true, true)).withDefringe(false));
+
+        assertEquals(255, alpha(fixedSeed, 119, 10));
+        for (int y = 0; y < 20; y++) {
+            for (int x = 0; x < 120; x++) {
+                assertEquals(0, alpha(followed, x, y), "ramp pixel " + x + "," + y);
+            }
+        }
+        assertEquals(255, alpha(followed, 120, 10));
+        assertEquals(255, alpha(followed, 139, 0));
+    }
+
+    @Test
+    void nonContiguousSelectionRemovesEveryMatchingPixelAcrossTheImage() {
+        BufferedImage source = image(9, 3);
+        fill(source, 0, 0, 9, 3, NAVY);
+        fill(source, 0, 0, 3, 3, YELLOW);
+        fill(source, 6, 0, 3, 3, YELLOW);
+        PixelCoordinate click = new PixelCoordinate(1, 1);
+
+        BufferedImage contiguous = BackgroundRegionProcessor.removeSelection(source,
+                BackgroundSelection.EMPTY.withSeed(click).withDefringe(false));
+        BufferedImage everywhere = BackgroundRegionProcessor.removeSelection(source,
+                BackgroundSelection.EMPTY.withSeed(new RegionSeed(click, false, false)).withDefringe(false));
+
+        assertEquals(255, alpha(contiguous, 7, 1));
+        assertEquals(0, alpha(everywhere, 1, 1));
+        assertEquals(0, alpha(everywhere, 7, 1));
+        assertEquals(255, alpha(everywhere, 4, 1));
+    }
+
+    @Test
     void higherToleranceRemovesColorsFurtherFromTheSeed() {
         BufferedImage source = image(3, 1);
         source.setRGB(0, 0, new Color(100, 100, 100).getRGB());

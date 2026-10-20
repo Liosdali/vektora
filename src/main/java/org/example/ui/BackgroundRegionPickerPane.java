@@ -4,6 +4,7 @@ import javafx.geometry.Pos;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Slider;
 import javafx.scene.control.ToggleButton;
@@ -25,6 +26,7 @@ import org.example.model.IconAsset;
 import org.example.vector.BackgroundSelection;
 import org.example.vector.EraseStroke;
 import org.example.vector.PixelCoordinate;
+import org.example.vector.RegionSeed;
 import org.example.vector.RegionSuggestion;
 
 import java.awt.image.BufferedImage;
@@ -53,6 +55,8 @@ public final class BackgroundRegionPickerPane extends BorderPane {
     private final ToggleButton maskView = new ToggleButton("Maske");
     private final ToggleButton resultView = new ToggleButton("Sonuç");
     private final Slider brushSize = new Slider(1, 20, 4);
+    private final CheckBox followGradient = new CheckBox("Degradeyi takip et");
+    private final CheckBox contiguous = new CheckBox("Bitişik");
     private final Label hint = new Label();
     private final FlowPane suggestionChips = new FlowPane(6, 6);
     private final List<PixelCoordinate> activeStroke = new ArrayList<>();
@@ -60,7 +64,7 @@ public final class BackgroundRegionPickerPane extends BorderPane {
     private Image resultImage;
     private Image removedOverlay;
     private BackgroundSelection selection = BackgroundSelection.EMPTY;
-    private Consumer<PixelCoordinate> onSeedSelected = ignored -> { };
+    private Consumer<RegionSeed> onSeedSelected = ignored -> { };
     private Consumer<EraseStroke> onStrokeDrawn = ignored -> { };
     private Consumer<EraseStroke> onProtectDrawn = ignored -> { };
     private double imageX;
@@ -89,13 +93,25 @@ public final class BackgroundRegionPickerPane extends BorderPane {
         brushLabel.getStyleClass().add("muted");
         brushSize.setPrefWidth(120);
         brushSize.disableProperty().bind(regionTool.selectedProperty());
+        contiguous.setSelected(true);
+        followGradient.setTooltip(new Tooltip(
+                "Her pikseli yanındaki seçili alanla karşılaştırır; yavaş değişen fonu tek tıkla seçer"));
+        contiguous.setTooltip(new Tooltip(
+                "Kapalıyken tıklanan renge benzeyen bütün pikseller silinir, birbirine bağlı olmasalar da"));
+        followGradient.disableProperty().bind(regionTool.selectedProperty().not().or(contiguous.selectedProperty().not()));
+        contiguous.disableProperty().bind(regionTool.selectedProperty().not());
+        HBox regionOptions = new HBox(10, followGradient, contiguous);
+        regionOptions.setAlignment(Pos.CENTER_LEFT);
         Button fit = new Button("Sığdır");
         fit.getStyleClass().add("ghost");
         fit.setOnAction(event -> resetView());
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox toolbar = new HBox(10, tools, brushLabel, brushSize, spacer, fit, views);
+        HBox toolbar = new HBox(10, tools, spacer, fit, views);
         toolbar.setAlignment(Pos.CENTER_LEFT);
+        HBox toolOptions = new HBox(16, regionOptions, new HBox(8, brushLabel, brushSize));
+        toolOptions.setAlignment(Pos.CENTER_LEFT);
+        ((HBox) toolOptions.getChildren().get(1)).setAlignment(Pos.CENTER_LEFT);
 
         Label suggestionsTitle = new Label("Önerilen bölgeler");
         suggestionsTitle.getStyleClass().add("muted");
@@ -104,7 +120,7 @@ public final class BackgroundRegionPickerPane extends BorderPane {
         suggestions.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(suggestionChips, Priority.ALWAYS);
 
-        VBox header = new VBox(8, title, hint, toolbar, suggestions);
+        VBox header = new VBox(8, title, hint, toolbar, toolOptions, suggestions);
         header.setStyle("-fx-padding: 0 0 12 0;");
         setTop(header);
         updateHint();
@@ -123,6 +139,7 @@ public final class BackgroundRegionPickerPane extends BorderPane {
     private static HBox segmented(ToggleGroup group, ToggleButton... buttons) {
         for (ToggleButton button : buttons) {
             button.setToggleGroup(group);
+            button.setMinWidth(Region.USE_PREF_SIZE);
         }
         buttons[0].setSelected(true);
         // Keep one option selected: clicking the active option must not clear the group.
@@ -140,7 +157,8 @@ public final class BackgroundRegionPickerPane extends BorderPane {
         canvas.setOnMouseClicked(event -> {
             if (event.getButton() == MouseButton.PRIMARY && regionTool.isSelected()
                     && event.isStillSincePress()) {
-                coordinateAt(event.getX(), event.getY()).ifPresent(onSeedSelected);
+                coordinateAt(event.getX(), event.getY()).ifPresent(point -> onSeedSelected.accept(
+                        new RegionSeed(point, followGradient.isSelected(), contiguous.isSelected())));
             }
         });
         canvas.setOnMousePressed(event -> {
@@ -201,7 +219,7 @@ public final class BackgroundRegionPickerPane extends BorderPane {
 
     private void updateHint() {
         hint.setText(regionTool.isSelected()
-                ? "Silmek istediğin bağlı renk alanına tıkla; kırmızı alanlar silinecek. "
+                ? "Silmek istediğin renk alanına tıkla; kırmızı alanlar silinecek. "
                         + "Tekerlek: yakınlaştır · sağ tık sürükle: kaydır."
                 : eraseTool.isSelected()
                 ? "Silinecek kısmı boya; boyadığın alan renginden bağımsız olarak saydam yapılır."
@@ -229,7 +247,7 @@ public final class BackgroundRegionPickerPane extends BorderPane {
     public void setSource(
             IconAsset icon, BackgroundSelection currentSelection, BufferedImage processed,
             List<RegionSuggestion> suggestions,
-            Consumer<PixelCoordinate> seedSelected, Consumer<EraseStroke> strokeDrawn,
+            Consumer<RegionSeed> seedSelected, Consumer<EraseStroke> strokeDrawn,
             Consumer<EraseStroke> protectDrawn) {
         Objects.requireNonNull(icon, "Selected icon is required");
         Objects.requireNonNull(processed, "Processed image is required");
@@ -276,7 +294,7 @@ public final class BackgroundRegionPickerPane extends BorderPane {
             chip.setTooltip(new Tooltip("Tıkla: bu bölgeyi sil (" + color + ", "
                     + suggestion.pixelCount() + " piksel)"));
             chip.setAccessibleText("Bölgeyi sil: " + color + ", görünür alanın yüzde " + percent);
-            chip.setOnAction(event -> onSeedSelected.accept(suggestion.seed()));
+            chip.setOnAction(event -> onSeedSelected.accept(RegionSeed.at(suggestion.seed())));
             suggestionChips.getChildren().add(chip);
         }
     }

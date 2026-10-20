@@ -117,13 +117,18 @@ public final class IconPackController {
     }
 
     public void addBackgroundRemovalSeed(IconAsset icon, PixelCoordinate seed) {
+        addBackgroundRegion(icon, RegionSeed.at(Objects.requireNonNull(seed, "Background seed is required")));
+    }
+
+    /** Removes the region grown from a click, as the click's gradient and contiguity modes say. */
+    public void addBackgroundRegion(IconAsset icon, RegionSeed region) {
         requireOwnedIcon(icon);
-        Objects.requireNonNull(seed, "Background seed is required");
+        PixelCoordinate seed = Objects.requireNonNull(region, "Background region is required").point();
         if (seed.x() < 0 || seed.y() < 0
                 || seed.x() >= icon.image().getWidth() || seed.y() >= icon.image().getHeight()) {
             throw new IllegalArgumentException("Background seed must be inside the source image");
         }
-        pack.addBackgroundRemovalSeed(icon, seed);
+        pack.addBackgroundRegion(icon, region);
     }
 
     public List<PixelCoordinate> backgroundRemovalSeeds(IconAsset icon) {

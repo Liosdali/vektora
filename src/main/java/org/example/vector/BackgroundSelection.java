@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Objects;
 
 public record BackgroundSelection(
-        List<PixelCoordinate> seeds,
+        List<RegionSeed> regions,
         List<EraseStroke> strokes,
         List<EraseStroke> protectStrokes,
         int tolerance,
@@ -17,7 +17,7 @@ public record BackgroundSelection(
     public static final BackgroundSelection EMPTY = new BackgroundSelection(List.of(), List.of());
 
     public BackgroundSelection {
-        seeds = List.copyOf(Objects.requireNonNull(seeds, "Seeds are required"));
+        regions = List.copyOf(Objects.requireNonNull(regions, "Regions are required"));
         strokes = List.copyOf(Objects.requireNonNull(strokes, "Strokes are required"));
         protectStrokes = List.copyOf(Objects.requireNonNull(protectStrokes, "Protect strokes are required"));
         if (tolerance < 0 || tolerance > MAX_TOLERANCE) {
@@ -26,39 +26,48 @@ public record BackgroundSelection(
     }
 
     public BackgroundSelection(List<PixelCoordinate> seeds, List<EraseStroke> strokes) {
-        this(seeds, strokes, List.of(), DEFAULT_TOLERANCE, true, false);
+        this(seeds.stream().map(RegionSeed::at).toList(), strokes, List.of(), DEFAULT_TOLERANCE, true, false);
+    }
+
+    /** The clicked points of every selected region, in click order. */
+    public List<PixelCoordinate> seeds() {
+        return regions.stream().map(RegionSeed::point).toList();
     }
 
     public boolean hasEdits() {
-        return !seeds.isEmpty() || !strokes.isEmpty() || !protectStrokes.isEmpty() || keepSubjectOnly;
+        return !regions.isEmpty() || !strokes.isEmpty() || !protectStrokes.isEmpty() || keepSubjectOnly;
     }
 
     public BackgroundSelection withSeed(PixelCoordinate seed) {
-        return new BackgroundSelection(append(seeds, seed), strokes, protectStrokes, tolerance, defringe,
+        return withSeed(RegionSeed.at(seed));
+    }
+
+    public BackgroundSelection withSeed(RegionSeed seed) {
+        return new BackgroundSelection(append(regions, seed), strokes, protectStrokes, tolerance, defringe,
                 keepSubjectOnly);
     }
 
     public BackgroundSelection withStroke(EraseStroke stroke) {
-        return new BackgroundSelection(seeds, append(strokes, stroke), protectStrokes, tolerance, defringe,
+        return new BackgroundSelection(regions, append(strokes, stroke), protectStrokes, tolerance, defringe,
                 keepSubjectOnly);
     }
 
     public BackgroundSelection withProtectStroke(EraseStroke stroke) {
-        return new BackgroundSelection(seeds, strokes, append(protectStrokes, stroke), tolerance, defringe,
+        return new BackgroundSelection(regions, strokes, append(protectStrokes, stroke), tolerance, defringe,
                 keepSubjectOnly);
     }
 
     public BackgroundSelection withTolerance(int value) {
-        return new BackgroundSelection(seeds, strokes, protectStrokes, value, defringe, keepSubjectOnly);
+        return new BackgroundSelection(regions, strokes, protectStrokes, value, defringe, keepSubjectOnly);
     }
 
     public BackgroundSelection withDefringe(boolean value) {
-        return new BackgroundSelection(seeds, strokes, protectStrokes, tolerance, value, keepSubjectOnly);
+        return new BackgroundSelection(regions, strokes, protectStrokes, tolerance, value, keepSubjectOnly);
     }
 
     /** Removes everything a subject mask marks as background, on top of the other edits. */
     public BackgroundSelection withKeepSubjectOnly(boolean value) {
-        return new BackgroundSelection(seeds, strokes, protectStrokes, tolerance, defringe, value);
+        return new BackgroundSelection(regions, strokes, protectStrokes, tolerance, defringe, value);
     }
 
     public BackgroundSelection withoutEdits() {

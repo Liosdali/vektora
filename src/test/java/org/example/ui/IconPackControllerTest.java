@@ -377,6 +377,25 @@ class IconPackControllerTest {
     }
 
     @Test
+    void storesHowEachRegionClickGrowsAndUndoesItLikeAnyEdit(@TempDir Path directory) throws Exception {
+        Path source = writePng(directory.resolve("sun.png"), Color.ORANGE);
+        IconPackController controller = controller();
+        controller.addImages(List.of(source));
+        IconAsset icon = controller.pack().icons().getFirst();
+        org.example.vector.RegionSeed gradient =
+                new org.example.vector.RegionSeed(new PixelCoordinate(0, 0), true, false);
+
+        controller.addBackgroundRegion(icon, gradient);
+
+        assertEquals(List.of(gradient), controller.backgroundSelection(icon).regions());
+        assertEquals(List.of(new PixelCoordinate(0, 0)), controller.backgroundRemovalSeeds(icon));
+        assertTrue(controller.undoBackgroundEdit(icon));
+        assertTrue(controller.backgroundSelection(icon).regions().isEmpty());
+        assertThrows(IllegalArgumentException.class, () -> controller.addBackgroundRegion(icon,
+                new org.example.vector.RegionSeed(new PixelCoordinate(8, 0), false, true)));
+    }
+
+    @Test
     void newPackReducesToEightColorsAtTheDetailedLevel() {
         TraceOptions options = controller().pack().traceOptions();
 

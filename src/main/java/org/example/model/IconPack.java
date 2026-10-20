@@ -4,6 +4,7 @@ import org.example.export.SvgExportSettings;
 import org.example.vector.BackgroundSelection;
 import org.example.vector.EraseStroke;
 import org.example.vector.PixelCoordinate;
+import org.example.vector.RegionSeed;
 import org.example.vector.SubjectMask;
 import org.example.vector.TraceOptions;
 
@@ -46,8 +47,12 @@ public final class IconPack {
     }
 
     public synchronized void addBackgroundRemovalSeed(IconAsset icon, PixelCoordinate seed) {
-        if (!backgroundRemovalSeeds(icon).contains(seed)) {
-            editBackground(icon, selection -> selection.withSeed(seed));
+        addBackgroundRegion(icon, RegionSeed.at(seed));
+    }
+
+    public synchronized void addBackgroundRegion(IconAsset icon, RegionSeed region) {
+        if (!backgroundSelection(icon).regions().contains(region)) {
+            editBackground(icon, selection -> selection.withSeed(region));
         }
     }
 
@@ -94,7 +99,7 @@ public final class IconPack {
         BackgroundSelection current = backgroundSelection(icon);
         BackgroundSelection previous = history.pop();
         // Undo restores the removal edits; tolerance and defringe stay as the user last set them.
-        backgroundSelections.put(icon, new BackgroundSelection(previous.seeds(), previous.strokes(),
+        backgroundSelections.put(icon, new BackgroundSelection(previous.regions(), previous.strokes(),
                 previous.protectStrokes(), current.tolerance(), current.defringe(), previous.keepSubjectOnly()));
         return true;
     }

@@ -11,6 +11,9 @@ public final class BackgroundRegionProcessor {
     private static final int BORDER_BUCKET_MASK = 0x00f0f0f0;
     private static final int MIN_MATTE_CONTRAST_SQUARED = 30 * 30;
     private static final int MAX_MATTE_RESIDUAL_SQUARED = 40 * 40;
+    // How quickly a gradient-following region's reference color moves toward each new pixel:
+    // slow enough to average out noise, fast enough to keep up with a gradient.
+    private static final double GRADIENT_SMOOTHING = 0.25;
 
     private BackgroundRegionProcessor() {
     }
@@ -40,15 +43,21 @@ public final class BackgroundRegionProcessor {
         int width = source.getWidth();
         int height = source.getHeight();
         boolean[] removed = new boolean[width * height];
-        for (PixelCoordinate seed : selection.seeds()) {
-            Objects.requireNonNull(seed, "Background seed is required");
+        for (RegionSeed region : selection.regions()) {
+            PixelCoordinate seed = region.point();
             validateSeed(seed, width, height);
             int seedPixel = source.getRGB(seed.x(), seed.y());
             if ((seedPixel >>> 24) == 0) {
                 continue;
             }
-            collectConnectedRegion(source, seed.x(), seed.y(), seedPixel, removed, false,
-                    selection.tolerance());
+            if (!region.contiguous()) {
+                collectMatchingPixels(source, seedPixel, removed, selection.tolerance());
+            } else if (region.followGradient()) {
+                collectGradientRegion(source, seed.x(), seed.y(), removed, selection.tolerance());
+            } else {
+                collectConnectedRegion(source, seed.x(), seed.y(), seedPixel, removed, false,
+                        selection.tolerance());
+            }
         }
         if (selection.keepSubjectOnly() && subjectMask != null) {
             for (int index = 0; index < removed.length; index++) {
@@ -199,6 +208,63 @@ public final class BackgroundRegionProcessor {
             if (y + 1 < height) {
                 enqueueIfMatching(source, x, y + 1, seedLab, opaqueOnly, tolerance, removed, queue);
             }
+        }
+    }
+
+    /** Removes every visible pixel close to the seed color, connected to it or not. */
+    private static void collectMatchingPixels(BufferedImage source, int seedRgb, boolean[] removed, int tolerance) {
+        int width = source.getWidth();
+        int[] pixels = source.getRGB(0, 0, width, source.getHeight(), null, 0, width);
+        double[] seedLab = LabColor.lab(seedRgb);
+        for (int index = 0; index < pixels.length; index++) {
+            if (!removed[index] && matchesBackground(pixels[index], seedLab, false, tolerance)) {
+                removed[index] = true;
+            }
+        }
+    }
+
+    /**
+     * Grows a region by comparing each neighbor with a smoothed reference color carried along from
+     * the pixel that reached it. The reference drifts with a slow gradient but averages out noise,
+     * and a sudden jump such as the artwork's edge still stops the region.
+     */
+    private static void collectGradientRegion(
+            BufferedImage source, int seedX, int seedY, boolean[] removed, int tolerance) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        int seedIndex = seedY * width + seedX;
+        if (removed[seedIndex]) {
+            return;
+        }
+        int[] pixels = source.getRGB(0, 0, width, height, null, 0, width);
+        double[][] reference = new double[pixels.length][];
+        reference[seedIndex] = LabColor.lab(pixels[seedIndex]);
+        removed[seedIndex] = true;
+        ArrayDeque<Integer> queue = new ArrayDeque<>();
+        queue.add(seedIndex);
+        while (!queue.isEmpty()) {
+            int index = queue.removeFirst();
+            int x = index % width;
+            int y = index / width;
+            int[] neighbors = {
+                    x > 0 ? index - 1 : -1, x + 1 < width ? index + 1 : -1,
+                    y > 0 ? index - width : -1, y + 1 < height ? index + width : -1};
+            for (int neighbor : neighbors) {
+                if (neighbor < 0 || removed[neighbor] || (pixels[neighbor] >>> 24) == 0) {
+                    continue;
+                }
+                double[] color = LabColor.lab(pixels[neighbor]);
+                double[] from = reference[index];
+                if (LabColor.deltaE(color, from) <= tolerance) {
+                    removed[neighbor] = true;
+                    reference[neighbor] = new double[] {
+                            from[0] + (color[0] - from[0]) * GRADIENT_SMOOTHING,
+                            from[1] + (color[1] - from[1]) * GRADIENT_SMOOTHING,
+                            from[2] + (color[2] - from[2]) * GRADIENT_SMOOTHING};
+                    queue.addLast(neighbor);
+                }
+            }
+            reference[index] = null;
         }
     }
 

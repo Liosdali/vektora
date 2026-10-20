@@ -616,8 +616,10 @@ public final class IconWorkspace extends BorderPane {
         backgroundPicker.setSource(icon, controller.backgroundSelection(icon), controller.processedSource(icon),
                 controller.suggestedRegions(icon),
                 seed -> {
-                    controller.addBackgroundRemovalSeed(icon, seed);
-                    backgroundChanged(icon, "Bağlı arka plan bölgesi silindi.");
+                    controller.addBackgroundRegion(icon, seed);
+                    backgroundChanged(icon, !seed.contiguous() ? "Bu renge benzeyen bütün alanlar silindi."
+                            : seed.followGradient() ? "Degrade boyunca bağlı arka plan silindi."
+                            : "Bağlı arka plan bölgesi silindi.");
                 }, stroke -> {
                     controller.addEraseStroke(icon, stroke);
                     backgroundChanged(icon, "Boyanan alan silindi.");
