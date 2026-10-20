@@ -4,7 +4,13 @@ import java.awt.Color;
 import java.util.List;
 import java.util.Objects;
 
-public record TraceOptions(ColorMode mode, int maxColors, List<Color> palette) {
+/**
+ * @param simplification 0 keeps every traced detail; higher levels drop tiny specks and fit
+ *                       straighter, smoother outlines (up to {@link #MAX_SIMPLIFICATION}).
+ */
+public record TraceOptions(ColorMode mode, int maxColors, List<Color> palette, int simplification) {
+    public static final int MAX_SIMPLIFICATION = 4;
+
     public TraceOptions {
         Objects.requireNonNull(mode, "Color mode is required");
         palette = List.copyOf(Objects.requireNonNull(palette, "Palette is required"));
@@ -17,10 +23,21 @@ public record TraceOptions(ColorMode mode, int maxColors, List<Color> palette) {
         if (mode != ColorMode.CUSTOM_PALETTE && !palette.isEmpty()) {
             throw new IllegalArgumentException("A palette is only valid in custom-palette mode");
         }
+        if (simplification < 0 || simplification > MAX_SIMPLIFICATION) {
+            throw new IllegalArgumentException("Simplification must be between 0 and " + MAX_SIMPLIFICATION);
+        }
+    }
+
+    public TraceOptions(ColorMode mode, int maxColors, List<Color> palette) {
+        this(mode, maxColors, palette, 0);
     }
 
     public static TraceOptions preserveSourceColors() {
         return new TraceOptions(ColorMode.PRESERVE_SOURCE, 256, List.of());
+    }
+
+    public TraceOptions withSimplification(int level) {
+        return new TraceOptions(mode, maxColors, palette, level);
     }
 
     public enum ColorMode {

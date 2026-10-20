@@ -283,6 +283,33 @@ class IconPackControllerTest {
         assertTrue(exportedSvg.contains("data-color=\"#0000ff\""));
     }
 
+    @Test
+    void suggestedRegionsLeaveOutAreasThatAreAlreadyRemoved(@TempDir Path directory) throws Exception {
+        // A transparent margin keeps automatic edge cleanup out of the way.
+        BufferedImage image = new BufferedImage(14, 14, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 1; y < 13; y++) {
+            for (int x = 1; x < 13; x++) {
+                image.setRGB(x, y, (x < 7 ? Color.GREEN : Color.BLUE).getRGB());
+            }
+        }
+        for (int y = 4; y < 8; y++) {
+            image.setRGB(2, y, Color.RED.getRGB());
+            image.setRGB(11, y, Color.RED.getRGB());
+        }
+        Path source = directory.resolve("halves.png");
+        ImageIO.write(image, "png", source.toFile());
+        IconPackController controller = controller();
+        controller.addImages(List.of(source));
+        IconAsset icon = controller.pack().icons().getFirst();
+        int green = Color.GREEN.getRGB() & 0xffffff;
+
+        assertTrue(controller.suggestedRegions(icon).stream().anyMatch(region -> region.rgb() == green));
+        controller.addBackgroundRemovalSeed(icon, controller.suggestedRegions(icon).stream()
+                .filter(region -> region.rgb() == green).findFirst().orElseThrow().seed());
+
+        assertTrue(controller.suggestedRegions(icon).stream().noneMatch(region -> region.rgb() == green));
+    }
+
     private static IconPackController controller() {
         return new IconPackController(new IconPack(), new ImageTracerVectorizer(), new SvgExportService());
     }

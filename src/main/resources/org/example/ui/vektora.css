@@ -329,3 +329,17 @@
     -fx-padding: 2 4 2 4;
     -fx-cursor: hand;
 }
+
+.button.chip {
+    -fx-background-color: -vk-raised;
+    -fx-border-color: -vk-border-strong;
+    -fx-text-fill: -vk-text;
+    -fx-font-size: 12px;
+    -fx-padding: 4 10 4 6;
+    -fx-graphic-text-gap: 6;
+}
+
+.button.chip:hover {
+    -fx-border-color: -vk-accent;
+    -fx-background-color: -vk-hover;
+}

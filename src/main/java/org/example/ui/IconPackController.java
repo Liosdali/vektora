@@ -26,6 +26,8 @@ public final class IconPackController {
     };
 
     private static final byte[] JPEG_SIGNATURE = {(byte) 0xff, (byte) 0xd8, (byte) 0xff};
+    private static final int MAX_SUGGESTED_REGIONS = 6;
+    private static final double MIN_SUGGESTED_SHARE = 0.01;
 
     private final IconPack pack;
     private final SvgVectorizer vectorizer;
@@ -161,6 +163,13 @@ public final class IconPackController {
                 BackgroundRegionProcessor.removeSelection(icon.image(), pack.backgroundSelection(icon)));
     }
 
+    /** Large regions still visible after the current removals, likely candidates to remove next. */
+    public List<RegionSuggestion> suggestedRegions(IconAsset icon) {
+        requireOwnedIcon(icon);
+        return BackgroundRegionProcessor.suggestRegions(processedSource(icon),
+                pack.backgroundSelection(icon).tolerance(), MAX_SUGGESTED_REGIONS, MIN_SUGGESTED_SHARE);
+    }
+
     public void setLayerHidden(IconAsset icon, String color, boolean hidden) {
         requireOwnedIcon(icon);
         Objects.requireNonNull(color, "Layer color is required");
@@ -257,8 +266,8 @@ public final class IconPackController {
             List<IconVariant> variants = new ArrayList<>(palettes.size());
             for (int index = 0; index < palettes.size(); index++) {
                 List<Color> palette = palettes.get(index);
-                TraceOptions options = new TraceOptions(
-                        TraceOptions.ColorMode.CUSTOM_PALETTE, palette.size(), palette);
+                TraceOptions options = new TraceOptions(TraceOptions.ColorMode.CUSTOM_PALETTE,
+                        palette.size(), palette, pack.traceOptions().simplification());
                 String svg = vectorizer.vectorize(image, options);
                 variants.add(new IconVariant(icon.name(), "palette-" + (index + 1), svg));
             }

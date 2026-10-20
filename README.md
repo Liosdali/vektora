@@ -26,6 +26,9 @@ mvn test
 2. Soldaki listeden bir ikon seçerek SVG önizlemesini aç.
 3. **Paket ayarları** altında SVG tuval genişliğini/yüksekliğini ve görünür ikon ölçeğini ayarla. Örneğin `0.5`, ikonu tuval içinde yarı boyuta getirir.
 4. **Vektör ve renk** menüsünden kaynak renklerini koru, kaynak renk sayısını azalt veya özel paletleri kullan seçeneklerinden birini seç.
+   **Detay** kaydırıcısı "En ayrıntılı" ile "En sade" arasında ayarlanır. Sadeleştikçe küçük kırıntılar atılır, kenarlar
+   daha düz çizilir ve SVG küçülür. Kenarları yumuşatılmış görsellerde "Renk sayısını azalt" ile birlikte kullanmak
+   katman sayısını belirgin şekilde düşürür.
 5. Özel palet modunda **Palet ekle** ile yeni bir renk varyantı oluştur; palete istediğin sayıda renk ekleyebilir veya renk seçicilerden değiştirebilirsin. Her palet ikon başına ayrı bir SVG varyantı üretir.
 6. **Dışa aktar** menüsünden ikon başına SVG dosyalarını, tek bir SVG sprite'ı veya bu çıktıları birlikte içeren ZIP paketini seç.
 
@@ -42,6 +45,9 @@ Seçim ekranında üç araç vardır:
   renkteki alanlar korunur. Tolerans, sağ paneldeki kaydırıcıyla her ikon için ayrı ayarlanır (varsayılan 24).
 - **Fırçayla sil:** Boyadığın alan renginden bağımsız olarak saydamlaştırılır.
 - **Fırçayla koru:** Boyadığın alan hiçbir araçla silinmez. Yanlışlıkla silinen yerleri geri getirmek için kullanılır.
+
+Araç çubuğunun altındaki **Önerilen bölgeler**, hâlâ görünen en büyük renk alanlarını görünür alana oranlarıyla
+listeler. Görselin kenarına değen alanlar önce gelir. Bir öneriye tıklamak o alana tıklamakla aynıdır.
 
 **Maske** görünümünde silinecek alanlar (otomatik kenar temizliği dahil) kırmızıyla, **Sonuç** görünümünde
 saydam hâliyle gösterilir. Fare tekerleği yakınlaştırır, sağ tıkla sürüklemek görüntüyü kaydırır. **Kenar halesini temizle**

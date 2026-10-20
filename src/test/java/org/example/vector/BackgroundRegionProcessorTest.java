@@ -198,6 +198,32 @@ class BackgroundRegionProcessorTest {
         assertEquals(Color.RED.getRGB(), result.getRGB(5, 5));
     }
 
+    @Test
+    void suggestsEdgeRegionsFirstThenLargerRegionsAndSkipsTinyOnes() {
+        BufferedImage source = image(20, 20);
+        fill(source, 0, 0, 20, 20, Color.WHITE);
+        fill(source, 3, 3, 14, 14, YELLOW);
+        fill(source, 8, 8, 4, 4, NAVY);
+        source.setRGB(5, 5, Color.RED.getRGB());
+
+        List<RegionSuggestion> regions = BackgroundRegionProcessor.suggestRegions(source, 24, 5, 0.01);
+
+        assertEquals(List.of(Color.WHITE.getRGB() & 0xffffff, YELLOW.getRGB() & 0xffffff, NAVY.getRGB() & 0xffffff),
+                regions.stream().map(RegionSuggestion::rgb).toList());
+        assertEquals(List.of(true, false, false), regions.stream().map(RegionSuggestion::touchesBorder).toList());
+        assertEquals(204, regions.get(0).pixelCount());
+        assertEquals(204 / 400.0, regions.get(0).share(), 1e-9);
+        BufferedImage removed = BackgroundRegionProcessor.removeSelection(source,
+                BackgroundSelection.EMPTY.withSeed(regions.get(1).seed()).withDefringe(false));
+        assertEquals(0, alpha(removed, 3, 3));
+        assertEquals(255, alpha(removed, 9, 9));
+    }
+
+    @Test
+    void suggestsNothingForAFullyTransparentImage() {
+        assertEquals(List.of(), BackgroundRegionProcessor.suggestRegions(image(4, 4), 24, 5, 0.01));
+    }
+
     private static final Color YELLOW = new Color(233, 185, 73);
     private static final Color NAVY = new Color(30, 42, 68);
 

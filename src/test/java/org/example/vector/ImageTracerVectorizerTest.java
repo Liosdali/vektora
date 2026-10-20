@@ -119,6 +119,31 @@ class ImageTracerVectorizerTest {
     }
 
     @Test
+    void higherSimplificationDropsTinySpecksAndKeepsTheMainShape() throws Exception {
+        BufferedImage image = image(48, 48, true);
+        fill(image, 4, 4, 40, 40, Color.BLUE);
+        for (int y = 8; y < 40; y += 6) {
+            for (int x = 8; x < 40; x += 6) {
+                image.setRGB(x, y, Color.RED.getRGB());
+            }
+        }
+        TraceOptions detailed = TraceOptions.preserveSourceColors();
+
+        int detailedPaths = parse(vectorizer.vectorize(image, detailed)).getElementsByTagName("path").getLength();
+        Document simplified = parse(vectorizer.vectorize(image, detailed.withSimplification(4)));
+
+        assertTrue(simplified.getElementsByTagName("path").getLength() < detailedPaths);
+        assertTrue(pathFills(simplified).contains("RGB(0,0,255)"));
+        assertFalse(pathFills(simplified).contains("RGB(255,0,0)"));
+    }
+
+    @Test
+    void rejectsSimplificationOutsideTheSupportedLevels() {
+        assertThrows(IllegalArgumentException.class,
+                () -> TraceOptions.preserveSourceColors().withSimplification(TraceOptions.MAX_SIMPLIFICATION + 1));
+    }
+
+    @Test
     void rejectsNullImagesWithAnExplicitVectorizationError() {
         assertThrows(VectorizationException.class,
                 () -> vectorizer.vectorize(null, TraceOptions.preserveSourceColors()));

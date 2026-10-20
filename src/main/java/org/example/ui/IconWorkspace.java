@@ -41,6 +41,7 @@ import java.util.function.Consumer;
 
 public final class IconWorkspace extends BorderPane {
     private static final KeyCombination UNDO = new KeyCodeCombination(KeyCode.Z, KeyCombination.SHORTCUT_DOWN);
+    private static final String[] DETAIL_LEVELS = {"En ayrıntılı", "Ayrıntılı", "Dengeli", "Sade", "En sade"};
 
     private final IconPackController controller;
     private final ObservableList<IconAsset> icons = FXCollections.observableArrayList();
@@ -65,6 +66,8 @@ public final class IconWorkspace extends BorderPane {
             BackgroundSelection.DEFAULT_TOLERANCE);
     private final Label toleranceValue = new Label(Integer.toString(BackgroundSelection.DEFAULT_TOLERANCE));
     private final CheckBox defringeBox = new CheckBox("Kenar halesini temizle");
+    private final Slider detailSlider = new Slider(0, TraceOptions.MAX_SIMPLIFICATION, 0);
+    private final Label detailValue = new Label(DETAIL_LEVELS[0]);
     private final MenuButton exportButton = new MenuButton("Dışa aktar");
     private final Label status = new Label("PNG ikonlarını ekleyerek yeni bir paket oluştur.");
     private final Label packageCount = new Label("0 ikon");
@@ -216,8 +219,20 @@ public final class IconWorkspace extends BorderPane {
         colorMode.setMaxWidth(Double.MAX_VALUE);
         colorCount.setEditable(false);
         colorCount.setMaxWidth(Double.MAX_VALUE);
+        detailSlider.setMajorTickUnit(1);
+        detailSlider.setMinorTickCount(0);
+        detailSlider.setSnapToTicks(true);
+        detailSlider.setBlockIncrement(1);
+        Region detailSpacer = new Region();
+        HBox.setHgrow(detailSpacer, Priority.ALWAYS);
+        detailValue.getStyleClass().add("value-label");
+        HBox detailHeader = new HBox(new Label("Detay"), detailSpacer, detailValue);
         colors.getChildren().addAll(colorMode, mutedLabel("Azami renk sayısı"), colorCount,
-                mutedLabel("Yalnızca renk sayısını azaltma modunda kullanılır."), paletteEditor);
+                mutedLabel("Yalnızca renk sayısını azaltma modunda kullanılır."),
+                detailHeader, detailSlider,
+                mutedLabel("Sadeleştikçe küçük kırıntılar atılır, kenarlar daha düz ve yumuşak çizilir; "
+                        + "dosya da küçülür."),
+                paletteEditor);
 
         widthField.setPromptText("Genişlik");
         heightField.setPromptText("Yükseklik");
@@ -259,6 +274,17 @@ public final class IconWorkspace extends BorderPane {
             }
         });
         colorMode.setOnAction(event -> updateTraceOptions());
+        detailSlider.valueProperty().addListener((observable, oldValue, newValue) -> {
+            detailValue.setText(DETAIL_LEVELS[detailLevel()]);
+            if (!detailSlider.isValueChanging()) {
+                applyDetailLevel();
+            }
+        });
+        detailSlider.valueChangingProperty().addListener((observable, wasChanging, changing) -> {
+            if (!changing) {
+                applyDetailLevel();
+            }
+        });
         colorCount.valueProperty().addListener((observable, oldValue, newValue) -> {
             if (colorMode.getValue() != null
                     && colorMode.getValue().mode() == TraceOptions.ColorMode.REDUCE_SOURCE) {
@@ -403,8 +429,18 @@ public final class IconWorkspace extends BorderPane {
             case CUSTOM_PALETTE -> new TraceOptions(
                     TraceOptions.ColorMode.CUSTOM_PALETTE, palettes.getFirst().size(), palettes.getFirst());
         };
-        controller.setTraceOptions(options);
+        controller.setTraceOptions(options.withSimplification(detailLevel()));
         refreshPreview(iconList.getSelectionModel().getSelectedItem());
+    }
+
+    private int detailLevel() {
+        return (int) Math.round(detailSlider.getValue());
+    }
+
+    private void applyDetailLevel() {
+        if (detailLevel() != controller.pack().traceOptions().simplification()) {
+            updateTraceOptions();
+        }
     }
 
     private void onPalettesChanged(List<List<Color>> palettes) {
@@ -474,6 +510,7 @@ public final class IconWorkspace extends BorderPane {
 
     private void loadBackgroundPicker(IconAsset icon) {
         backgroundPicker.setSource(icon, controller.backgroundSelection(icon), controller.processedSource(icon),
+                controller.suggestedRegions(icon),
                 seed -> {
                     controller.addBackgroundRemovalSeed(icon, seed);
                     backgroundChanged(icon, "Bağlı arka plan bölgesi silindi.");

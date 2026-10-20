@@ -37,7 +37,10 @@ public final class ImageTracerVectorizer implements SvgVectorizer {
         if (options.mode() != TraceOptions.ColorMode.REDUCE_SOURCE) {
             tracerOptions.put("colorquantcycles", 1f);
         }
-        tracerOptions.put("pathomit", 0f);
+        Simplification simplification = Simplification.LEVELS[options.simplification()];
+        tracerOptions.put("pathomit", simplification.omittedPathLength());
+        tracerOptions.put("ltres", simplification.lineError());
+        tracerOptions.put("qtres", simplification.curveError());
         tracerOptions.put("roundcoords", 1f);
         tracerOptions.put("viewbox", 1f);
 
@@ -51,6 +54,21 @@ public final class ImageTracerVectorizer implements SvgVectorizer {
         } catch (Exception exception) {
             throw new VectorizationException("Could not convert the PNG to SVG paths", exception);
         }
+    }
+
+    /**
+     * ImageTracer settings per simplification level: paths with fewer edge nodes than
+     * {@code omittedPathLength} are dropped as noise, and the error thresholds decide how far a
+     * straight line or curve may stray from the pixel outline.
+     */
+    private record Simplification(float omittedPathLength, float lineError, float curveError) {
+        private static final Simplification[] LEVELS = {
+                new Simplification(0, 1, 1),
+                new Simplification(4, 1, 1),
+                new Simplification(8, 1.5f, 1.5f),
+                new Simplification(16, 2.5f, 2.5f),
+                new Simplification(32, 4, 4)
+        };
     }
 
     private static List<Color> customPalette(List<Color> colors, boolean hasTransparency) {

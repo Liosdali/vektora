@@ -8,9 +8,11 @@ import javafx.scene.control.Label;
 import javafx.scene.control.Slider;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
+import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -23,6 +25,7 @@ import org.example.model.IconAsset;
 import org.example.vector.BackgroundSelection;
 import org.example.vector.EraseStroke;
 import org.example.vector.PixelCoordinate;
+import org.example.vector.RegionSuggestion;
 
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
@@ -51,6 +54,7 @@ public final class BackgroundRegionPickerPane extends BorderPane {
     private final ToggleButton resultView = new ToggleButton("Sonuç");
     private final Slider brushSize = new Slider(1, 20, 4);
     private final Label hint = new Label();
+    private final FlowPane suggestionChips = new FlowPane(6, 6);
     private final List<PixelCoordinate> activeStroke = new ArrayList<>();
     private Image sourceImage;
     private Image resultImage;
@@ -93,7 +97,14 @@ public final class BackgroundRegionPickerPane extends BorderPane {
         HBox toolbar = new HBox(10, tools, brushLabel, brushSize, spacer, fit, views);
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
-        VBox header = new VBox(6, title, hint, toolbar);
+        Label suggestionsTitle = new Label("Önerilen bölgeler");
+        suggestionsTitle.getStyleClass().add("muted");
+        suggestionsTitle.setMinWidth(Region.USE_PREF_SIZE);
+        HBox suggestions = new HBox(10, suggestionsTitle, suggestionChips);
+        suggestions.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(suggestionChips, Priority.ALWAYS);
+
+        VBox header = new VBox(8, title, hint, toolbar, suggestions);
         header.setStyle("-fx-padding: 0 0 12 0;");
         setTop(header);
         updateHint();
@@ -217,6 +228,7 @@ public final class BackgroundRegionPickerPane extends BorderPane {
 
     public void setSource(
             IconAsset icon, BackgroundSelection currentSelection, BufferedImage processed,
+            List<RegionSuggestion> suggestions,
             Consumer<PixelCoordinate> seedSelected, Consumer<EraseStroke> strokeDrawn,
             Consumer<EraseStroke> protectDrawn) {
         Objects.requireNonNull(icon, "Selected icon is required");
@@ -241,7 +253,32 @@ public final class BackgroundRegionPickerPane extends BorderPane {
         sourceImage = FxImages.toFxImage(icon.image());
         resultImage = FxImages.toFxImage(processed);
         removedOverlay = removedOverlay(icon.image(), processed);
+        showSuggestions(Objects.requireNonNull(suggestions, "Suggestions are required"));
         draw();
+    }
+
+    private void showSuggestions(List<RegionSuggestion> suggestions) {
+        suggestionChips.getChildren().clear();
+        if (suggestions.isEmpty()) {
+            Label none = new Label("Belirgin bir bölge kalmadı");
+            none.getStyleClass().add("muted");
+            suggestionChips.getChildren().add(none);
+            return;
+        }
+        for (RegionSuggestion suggestion : suggestions) {
+            String color = String.format("#%06X", suggestion.rgb());
+            long percent = Math.max(1, Math.round(suggestion.share() * 100));
+            Region swatch = new Region();
+            swatch.getStyleClass().add("layer-swatch");
+            swatch.setStyle("-fx-background-color: " + color + ";");
+            Button chip = new Button("%" + percent + (suggestion.touchesBorder() ? " · kenar" : ""), swatch);
+            chip.getStyleClass().add("chip");
+            chip.setTooltip(new Tooltip("Tıkla: bu bölgeyi sil (" + color + ", "
+                    + suggestion.pixelCount() + " piksel)"));
+            chip.setAccessibleText("Bölgeyi sil: " + color + ", görünür alanın yüzde " + percent);
+            chip.setOnAction(event -> onSeedSelected.accept(suggestion.seed()));
+            suggestionChips.getChildren().add(chip);
+        }
     }
 
     static Optional<PixelCoordinate> sourceCoordinate(

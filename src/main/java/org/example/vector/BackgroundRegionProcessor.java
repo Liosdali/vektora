@@ -354,6 +354,62 @@ public final class BackgroundRegionProcessor {
                 && Math.abs((pixel & 0xff) - (seedRgb & 0xff)) <= tolerance;
     }
 
+    /**
+     * Splits the visible pixels into the connected regions a background click would remove and
+     * returns the larger ones, edge-touching regions first, then by size.
+     */
+    public static List<RegionSuggestion> suggestRegions(
+            BufferedImage image, int tolerance, int limit, double minimumShare) {
+        Objects.requireNonNull(image, "Image is required");
+        int width = image.getWidth();
+        int height = image.getHeight();
+        int[] pixels = image.getRGB(0, 0, width, height, null, 0, width);
+        long visible = Arrays.stream(pixels).filter(pixel -> (pixel >>> 24) != 0).count();
+        if (visible == 0 || limit < 1) {
+            return List.of();
+        }
+
+        boolean[] claimed = new boolean[pixels.length];
+        int[] stack = new int[pixels.length];
+        List<RegionSuggestion> regions = new ArrayList<>();
+        for (int start = 0; start < pixels.length; start++) {
+            if (claimed[start] || (pixels[start] >>> 24) == 0) {
+                continue;
+            }
+            int seedRgb = pixels[start];
+            int size = 0;
+            int count = 0;
+            boolean touchesBorder = false;
+            claimed[start] = true;
+            stack[size++] = start;
+            while (size > 0) {
+                int index = stack[--size];
+                count++;
+                int x = index % width;
+                int y = index / width;
+                touchesBorder |= x == 0 || y == 0 || x == width - 1 || y == height - 1;
+                int[] neighbors = {
+                        x > 0 ? index - 1 : -1, x + 1 < width ? index + 1 : -1,
+                        y > 0 ? index - width : -1, y + 1 < height ? index + width : -1};
+                for (int neighbor : neighbors) {
+                    if (neighbor >= 0 && !claimed[neighbor]
+                            && matchesBackground(pixels[neighbor], seedRgb, false, tolerance)) {
+                        claimed[neighbor] = true;
+                        stack[size++] = neighbor;
+                    }
+                }
+            }
+            double share = (double) count / visible;
+            if (share >= minimumShare) {
+                regions.add(new RegionSuggestion(new PixelCoordinate(start % width, start / width),
+                        seedRgb & 0x00ffffff, count, share, touchesBorder));
+            }
+        }
+        regions.sort(Comparator.comparing(RegionSuggestion::touchesBorder).reversed()
+                .thenComparing(Comparator.comparingInt(RegionSuggestion::pixelCount).reversed()));
+        return List.copyOf(regions.subList(0, Math.min(limit, regions.size())));
+    }
+
     private static void validateSeed(PixelCoordinate seed, int width, int height) {
         if (seed.x() < 0 || seed.y() < 0 || seed.x() >= width || seed.y() >= height) {
             throw new IllegalArgumentException("Background seed must be inside the source image");
