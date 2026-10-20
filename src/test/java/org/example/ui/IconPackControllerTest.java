@@ -124,6 +124,19 @@ class IconPackControllerTest {
         assertTrue(controller.pack().icons().isEmpty());
     }
 
+    @Test
+    void rejectsNonPngImageContentEvenWhenTheFileExtensionIsPng(@TempDir Path directory)
+            throws Exception {
+        Path mislabeled = directory.resolve("photo.png");
+        ImageIO.write(new BufferedImage(8, 8, BufferedImage.TYPE_INT_RGB), "jpeg", mislabeled.toFile());
+        IconPackController controller = controller();
+
+        List<ImportIssue> issues = controller.addImages(List.of(mislabeled));
+
+        assertEquals(1, issues.size());
+        assertTrue(controller.pack().icons().isEmpty());
+    }
+
     private static IconPackController controller() {
         return new IconPackController(new IconPack(), new ImageTracerVectorizer(), new SvgExportService());
     }

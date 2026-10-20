@@ -3,9 +3,11 @@ package org.example.ui;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -21,6 +23,10 @@ import org.example.vector.TraceOptions;
 import org.example.vector.VectorizationException;
 
 public final class IconPackController {
+    private static final byte[] PNG_SIGNATURE = {
+            (byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a
+    };
+
     private final IconPack pack;
     private final SvgVectorizer vectorizer;
     private final SvgExportService exportService;
@@ -45,6 +51,11 @@ public final class IconPackController {
             try {
                 if (!path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".png")) {
                     throw new IOException("Yalnızca PNG dosyaları eklenebilir");
+                }
+                try (InputStream input = Files.newInputStream(path)) {
+                    if (!Arrays.equals(PNG_SIGNATURE, input.readNBytes(PNG_SIGNATURE.length))) {
+                        throw new IOException("Dosya geçerli bir PNG görseli değil");
+                    }
                 }
                 BufferedImage image = ImageIO.read(path.toFile());
                 if (image == null || image.getWidth() <= 0 || image.getHeight() <= 0) {
