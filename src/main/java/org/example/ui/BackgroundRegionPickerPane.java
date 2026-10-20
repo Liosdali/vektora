@@ -1,23 +1,26 @@
 package org.example.ui;
 
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.Slider;
 import javafx.scene.control.ToggleButton;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.image.Image;
-import javafx.scene.image.PixelFormat;
-import javafx.scene.image.WritableImage;
+import javafx.scene.input.MouseButton;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.StrokeLineCap;
 import javafx.scene.shape.StrokeLineJoin;
 import org.example.model.IconAsset;
+import org.example.vector.BackgroundSelection;
 import org.example.vector.EraseStroke;
 import org.example.vector.PixelCoordinate;
 
@@ -29,62 +32,123 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 public final class BackgroundRegionPickerPane extends BorderPane {
+    private static final Color SURFACE = Color.web("#151619");
+    private static final Color CHECKER_LIGHT = Color.web("#24262b");
+    private static final Color CHECKER_DARK = Color.web("#1b1d21");
+    private static final Color ACCENT = Color.web("#c8f25c");
+    private static final Color PROTECT = Color.web("#38bdf8");
+    private static final int REMOVED_OVERLAY = 0xb4ef4444;
+    private static final double MAX_ZOOM = 16;
+
     private final Canvas canvas = new Canvas();
     private final StackPane imageSurface = new StackPane(canvas);
-    private final ToggleButton drawMode = new ToggleButton("Çizerek sil");
+    private final ToggleGroup toolGroup = new ToggleGroup();
+    private final ToggleButton regionTool = new ToggleButton("Bölge seç");
+    private final ToggleButton eraseTool = new ToggleButton("Fırçayla sil");
+    private final ToggleButton protectTool = new ToggleButton("Fırçayla koru");
+    private final ToggleGroup viewGroup = new ToggleGroup();
+    private final ToggleButton maskView = new ToggleButton("Maske");
+    private final ToggleButton resultView = new ToggleButton("Sonuç");
     private final Slider brushSize = new Slider(1, 20, 4);
+    private final Label hint = new Label();
     private final List<PixelCoordinate> activeStroke = new ArrayList<>();
     private Image sourceImage;
-    private List<PixelCoordinate> seeds = List.of();
-    private List<EraseStroke> strokes = List.of();
+    private Image resultImage;
+    private Image removedOverlay;
+    private BackgroundSelection selection = BackgroundSelection.EMPTY;
     private Consumer<PixelCoordinate> onSeedSelected = ignored -> { };
-    private Consumer<EraseStroke> onStrokeDrawn = ignored -> {
-    };
+    private Consumer<EraseStroke> onStrokeDrawn = ignored -> { };
+    private Consumer<EraseStroke> onProtectDrawn = ignored -> { };
     private double imageX;
     private double imageY;
     private double displayedWidth;
     private double displayedHeight;
+    private double zoom = 1;
+    private double panX;
+    private double panY;
+    private double panStartX;
+    private double panStartY;
 
     public BackgroundRegionPickerPane() {
-        setStyle("-fx-background-color: #111827; -fx-background-radius: 16; -fx-padding: 20;");
-        Label title = new Label("Arka plan bölgesini seç");
-        title.setStyle("-fx-font-size: 18px; -fx-font-weight: 700; -fx-text-fill: #f3f4f6;");
-        Label hint = new Label(
-                "Bölge modu: silmek istediğin bağlı alana tıkla. Çizim modu: silinecek kısmı fareyle boya; "
-                        + "boyadığın alan saydam yapılır.");
+        getStyleClass().add("canvas-panel");
+        Label title = new Label("Arka planı ayır");
+        title.getStyleClass().add("canvas-title");
+        hint.getStyleClass().add("muted");
         hint.setWrapText(true);
-        hint.setStyle("-fx-font-size: 12px; -fx-text-fill: #9ca3af;");
-        drawMode.setStyle("-fx-background-color: #1d2533; -fx-text-fill: #e2e8f0;");
-        brushSize.setPrefWidth(160);
+
+        HBox tools = segmented(toolGroup, regionTool, eraseTool, protectTool);
+        toolGroup.selectedToggleProperty().addListener((observable, previous, selected) -> updateHint());
+        HBox views = segmented(viewGroup, maskView, resultView);
+        viewGroup.selectedToggleProperty().addListener((observable, previous, selected) -> draw());
+
         Label brushLabel = new Label("Fırça");
-        brushLabel.setStyle("-fx-font-size: 12px; -fx-text-fill: #9ca3af;");
-        HBox tools = new HBox(10, drawMode, brushLabel, brushSize);
-        tools.setAlignment(Pos.CENTER_LEFT);
-        VBox header = new VBox(5, title, hint, tools);
-        header.setPadding(new Insets(0, 0, 16, 0));
+        brushLabel.getStyleClass().add("muted");
+        brushSize.setPrefWidth(120);
+        brushSize.disableProperty().bind(regionTool.selectedProperty());
+        Button fit = new Button("Sığdır");
+        fit.getStyleClass().add("ghost");
+        fit.setOnAction(event -> resetView());
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox toolbar = new HBox(10, tools, brushLabel, brushSize, spacer, fit, views);
+        toolbar.setAlignment(Pos.CENTER_LEFT);
+
+        VBox header = new VBox(6, title, hint, toolbar);
+        header.setStyle("-fx-padding: 0 0 12 0;");
         setTop(header);
-        imageSurface.setStyle("-fx-background-color: #151b27;");
+        updateHint();
+
         imageSurface.setMinSize(100, 100);
         canvas.widthProperty().bind(imageSurface.widthProperty());
         canvas.heightProperty().bind(imageSurface.heightProperty());
         canvas.widthProperty().addListener((observable, oldValue, newValue) -> draw());
         canvas.heightProperty().addListener((observable, oldValue, newValue) -> draw());
         canvas.setFocusTraversable(true);
-        canvas.setAccessibleText("Arka plan seçimi. Tıkla veya silinecek alanı çiz.");
+        canvas.setAccessibleText("Arka plan seçimi. Tıkla veya silinecek ya da korunacak alanı boya.");
+        configureMouse();
+        setCenter(imageSurface);
+    }
+
+    private static HBox segmented(ToggleGroup group, ToggleButton... buttons) {
+        for (ToggleButton button : buttons) {
+            button.setToggleGroup(group);
+        }
+        buttons[0].setSelected(true);
+        // Keep one option selected: clicking the active option must not clear the group.
+        group.selectedToggleProperty().addListener((observable, previous, selected) -> {
+            if (selected == null && previous != null) {
+                previous.setSelected(true);
+            }
+        });
+        HBox box = new HBox(buttons);
+        box.getStyleClass().add("segmented");
+        return box;
+    }
+
+    private void configureMouse() {
         canvas.setOnMouseClicked(event -> {
-            if (!drawMode.isSelected()) {
+            if (event.getButton() == MouseButton.PRIMARY && regionTool.isSelected()
+                    && event.isStillSincePress()) {
                 coordinateAt(event.getX(), event.getY()).ifPresent(onSeedSelected);
             }
         });
         canvas.setOnMousePressed(event -> {
-            if (drawMode.isSelected()) {
+            canvas.requestFocus();
+            if (event.getButton() != MouseButton.PRIMARY) {
+                panStartX = event.getX() - panX;
+                panStartY = event.getY() - panY;
+            } else if (isBrushTool()) {
                 activeStroke.clear();
                 coordinateAt(event.getX(), event.getY()).ifPresent(activeStroke::add);
                 draw();
             }
         });
         canvas.setOnMouseDragged(event -> {
-            if (drawMode.isSelected()) {
+            if (event.getButton() != MouseButton.PRIMARY) {
+                panX = event.getX() - panStartX;
+                panY = event.getY() - panStartY;
+                draw();
+            } else if (isBrushTool()) {
                 coordinateAt(event.getX(), event.getY()).ifPresent(point -> {
                     if (activeStroke.isEmpty() || !activeStroke.getLast().equals(point)) {
                         activeStroke.add(point);
@@ -94,13 +158,50 @@ public final class BackgroundRegionPickerPane extends BorderPane {
             }
         });
         canvas.setOnMouseReleased(event -> {
-            if (drawMode.isSelected() && !activeStroke.isEmpty()) {
+            if (event.getButton() == MouseButton.PRIMARY && isBrushTool() && !activeStroke.isEmpty()) {
                 EraseStroke stroke = new EraseStroke(activeStroke, brushRadius());
                 activeStroke.clear();
-                onStrokeDrawn.accept(stroke);
+                (protectTool.isSelected() ? onProtectDrawn : onStrokeDrawn).accept(stroke);
             }
         });
-        setCenter(imageSurface);
+        canvas.setOnScroll(event -> {
+            if (sourceImage == null || event.getDeltaY() == 0) {
+                return;
+            }
+            double nextZoom = Math.max(1, Math.min(MAX_ZOOM, zoom * (event.getDeltaY() > 0 ? 1.2 : 1 / 1.2)));
+            double applied = nextZoom / zoom;
+            // Keep the pixel under the pointer in place while zooming.
+            double centerX = canvas.getWidth() / 2 + panX;
+            double centerY = canvas.getHeight() / 2 + panY;
+            panX += (event.getX() - centerX) * (1 - applied);
+            panY += (event.getY() - centerY) * (1 - applied);
+            zoom = nextZoom;
+            if (zoom == 1) {
+                panX = 0;
+                panY = 0;
+            }
+            draw();
+        });
+    }
+
+    private boolean isBrushTool() {
+        return eraseTool.isSelected() || protectTool.isSelected();
+    }
+
+    private void updateHint() {
+        hint.setText(regionTool.isSelected()
+                ? "Silmek istediğin bağlı renk alanına tıkla; kırmızı alanlar silinecek. "
+                        + "Tekerlek: yakınlaştır · sağ tık sürükle: kaydır."
+                : eraseTool.isSelected()
+                ? "Silinecek kısmı boya; boyadığın alan renginden bağımsız olarak saydam yapılır."
+                : "Yanlışlıkla silinen yeri boya; korunan alan hiçbir araçla silinmez.");
+    }
+
+    private void resetView() {
+        zoom = 1;
+        panX = 0;
+        panY = 0;
+        draw();
     }
 
     private Optional<PixelCoordinate> coordinateAt(double viewX, double viewY) {
@@ -115,20 +216,31 @@ public final class BackgroundRegionPickerPane extends BorderPane {
     }
 
     public void setSource(
-            IconAsset icon, List<PixelCoordinate> selectedSeeds, List<EraseStroke> selectedStrokes,
-            Consumer<PixelCoordinate> seedSelected, Consumer<EraseStroke> strokeDrawn) {
+            IconAsset icon, BackgroundSelection currentSelection, BufferedImage processed,
+            Consumer<PixelCoordinate> seedSelected, Consumer<EraseStroke> strokeDrawn,
+            Consumer<EraseStroke> protectDrawn) {
         Objects.requireNonNull(icon, "Selected icon is required");
-        seeds = List.copyOf(Objects.requireNonNull(selectedSeeds, "Selected seeds are required"));
-        strokes = List.copyOf(Objects.requireNonNull(selectedStrokes, "Selected strokes are required"));
+        Objects.requireNonNull(processed, "Processed image is required");
+        selection = Objects.requireNonNull(currentSelection, "Background selection is required");
         onSeedSelected = Objects.requireNonNull(seedSelected, "Seed callback is required");
         onStrokeDrawn = Objects.requireNonNull(strokeDrawn, "Stroke callback is required");
+        onProtectDrawn = Objects.requireNonNull(protectDrawn, "Protect callback is required");
         activeStroke.clear();
         int largestBrush = Math.max(5, Math.min(icon.image().getWidth(), icon.image().getHeight()) / 4);
         brushSize.setMax(largestBrush);
         if (brushSize.getValue() > largestBrush) {
             brushSize.setValue(largestBrush);
         }
-        sourceImage = toFxImage(icon.image());
+        boolean sameSize = sourceImage != null && sourceImage.getWidth() == icon.image().getWidth()
+                && sourceImage.getHeight() == icon.image().getHeight();
+        if (!sameSize) {
+            zoom = 1;
+            panX = 0;
+            panY = 0;
+        }
+        sourceImage = FxImages.toFxImage(icon.image());
+        resultImage = FxImages.toFxImage(processed);
+        removedOverlay = removedOverlay(icon.image(), processed);
         draw();
     }
 
@@ -146,14 +258,19 @@ public final class BackgroundRegionPickerPane extends BorderPane {
                 Math.min(sourceWidth - 1, x), Math.min(sourceHeight - 1, y)));
     }
 
-    private static Image toFxImage(BufferedImage source) {
+    /** Red wherever an originally visible pixel ends up transparent. */
+    private static Image removedOverlay(BufferedImage source, BufferedImage processed) {
         int width = source.getWidth();
         int height = source.getHeight();
-        int[] pixels = source.getRGB(0, 0, width, height, null, 0, width);
-        WritableImage image = new WritableImage(width, height);
-        image.getPixelWriter().setPixels(
-                0, 0, width, height, PixelFormat.getIntArgbInstance(), pixels, 0, width);
-        return image;
+        int[] before = source.getRGB(0, 0, width, height, null, 0, width);
+        int[] after = processed.getRGB(0, 0, width, height, null, 0, width);
+        int[] overlay = new int[before.length];
+        for (int index = 0; index < overlay.length; index++) {
+            if ((before[index] >>> 24) != 0 && (after[index] >>> 24) == 0) {
+                overlay[index] = REMOVED_OVERLAY;
+            }
+        }
+        return FxImages.toFxImage(overlay, width, height);
     }
 
     private void draw() {
@@ -164,36 +281,65 @@ public final class BackgroundRegionPickerPane extends BorderPane {
         }
 
         GraphicsContext graphics = canvas.getGraphicsContext2D();
-        graphics.setFill(Color.web("#151b27"));
+        graphics.setImageSmoothing(false);
+        graphics.setFill(SURFACE);
         graphics.fillRect(0, 0, canvasWidth, canvasHeight);
         if (sourceImage == null) {
             return;
         }
 
         double scale = Math.min(
-                canvasWidth / sourceImage.getWidth(), canvasHeight / sourceImage.getHeight());
+                canvasWidth / sourceImage.getWidth(), canvasHeight / sourceImage.getHeight()) * zoom;
         displayedWidth = sourceImage.getWidth() * scale;
         displayedHeight = sourceImage.getHeight() * scale;
-        imageX = (canvasWidth - displayedWidth) / 2;
-        imageY = (canvasHeight - displayedHeight) / 2;
-        graphics.drawImage(sourceImage, imageX, imageY, displayedWidth, displayedHeight);
-        graphics.setFill(Color.web("#f97316"));
-        for (PixelCoordinate seed : seeds) {
-            double markerX = imageX + (seed.x() + 0.5) * displayedWidth / sourceImage.getWidth();
-            double markerY = imageY + (seed.y() + 0.5) * displayedHeight / sourceImage.getHeight();
-            double radius = Math.max(5, Math.min(12, scale * 3));
-            graphics.fillOval(markerX - radius, markerY - radius, radius * 2, radius * 2);
+        imageX = (canvasWidth - displayedWidth) / 2 + panX;
+        imageY = (canvasHeight - displayedHeight) / 2 + panY;
+        drawChecker(graphics, canvasWidth, canvasHeight);
+
+        boolean showResult = resultView.isSelected();
+        graphics.drawImage(showResult ? resultImage : sourceImage,
+                imageX, imageY, displayedWidth, displayedHeight);
+        if (showResult) {
+            return;
         }
+        graphics.drawImage(removedOverlay, imageX, imageY, displayedWidth, displayedHeight);
+
         double sx = displayedWidth / sourceImage.getWidth();
         double sy = displayedHeight / sourceImage.getHeight();
         graphics.setLineCap(StrokeLineCap.ROUND);
         graphics.setLineJoin(StrokeLineJoin.ROUND);
-        graphics.setStroke(Color.rgb(239, 68, 68, 0.6));
-        for (EraseStroke stroke : strokes) {
+        graphics.setStroke(PROTECT.deriveColor(0, 1, 1, 0.5));
+        for (EraseStroke stroke : selection.protectStrokes()) {
             drawStroke(graphics, stroke.points(), stroke.radius(), sx, sy);
         }
-        graphics.setStroke(Color.rgb(250, 204, 21, 0.6));
+        graphics.setStroke(protectTool.isSelected()
+                ? PROTECT.deriveColor(0, 1, 1, 0.7) : Color.web("#facc15", 0.7));
         drawStroke(graphics, activeStroke, brushRadius(), sx, sy);
+
+        double radius = Math.max(4, Math.min(9, scale * 2));
+        for (PixelCoordinate seed : selection.seeds()) {
+            double markerX = imageX + (seed.x() + 0.5) * sx;
+            double markerY = imageY + (seed.y() + 0.5) * sy;
+            graphics.setFill(SURFACE);
+            graphics.fillOval(markerX - radius - 2, markerY - radius - 2, radius * 2 + 4, radius * 2 + 4);
+            graphics.setFill(ACCENT);
+            graphics.fillOval(markerX - radius, markerY - radius, radius * 2, radius * 2);
+        }
+    }
+
+    private void drawChecker(GraphicsContext graphics, double canvasWidth, double canvasHeight) {
+        double left = Math.max(0, imageX);
+        double top = Math.max(0, imageY);
+        double right = Math.min(canvasWidth, imageX + displayedWidth);
+        double bottom = Math.min(canvasHeight, imageY + displayedHeight);
+        double cell = 10;
+        for (double y = top; y < bottom; y += cell) {
+            for (double x = left; x < right; x += cell) {
+                boolean light = ((int) ((x - imageX) / cell) + (int) ((y - imageY) / cell)) % 2 == 0;
+                graphics.setFill(light ? CHECKER_LIGHT : CHECKER_DARK);
+                graphics.fillRect(x, y, Math.min(cell, right - x), Math.min(cell, bottom - y));
+            }
+        }
     }
 
     private void drawStroke(

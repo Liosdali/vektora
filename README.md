@@ -35,12 +35,27 @@ SVG çıktısı piksel çözünürlüğünden bağımsızdır; genişlik, yükse
 
 Vektörleştirme, şeffaf kenar boşluklarını kırpar ve kenarlarda baskın olan düz arka plan rengini (yakın tonlarıyla birlikte) şeffaflaştırır. Tek renkli özel palet, şeffaf arka planı koruyarak yalnızca çizimi renklendirir.
 
-Rozet veya ikon içindeki kapalı arka plan alanlarını temizlemek için ikonu seçip **Arka plan bölgelerini seç** düğmesine
-tıkla. Kaynak PNG'de silmek istediğin bağlı renk alanını seç; gerekirse diğer alanlar için tekrar tıkla. Seçilen
-pikselin renginden her kanalda en fazla 24 farklı olan, dört yönden bağlı pikseller saydamlaştırılır; kopuk ama aynı
-renkteki alanlar korunur. **Seçimleri temizle** yalnızca seçili ikonun seçimlerini sıfırlar. Seçim ekranındaki **Çizerek
-sil** modunda fareyle boyadığın alan (fırça boyutu ayarlanabilir) renginden bağımsız olarak saydamlaştırılır. Bu
-seçimler önizlemeye, SVG dosyalarına, sprite'a ve ZIP'e birlikte uygulanır. Otomatik algılama veya tek renk paleti kuş,
-yazı ya da benzeri nesneleri anlamsal olarak tanımaz; karmaşık görsellerde kaldırılacak bölgeleri kullanıcı seçmelidir.
+Rozet veya ikon içindeki kapalı arka plan alanlarını temizlemek için ikonu seçip **Arka planı ayır** düğmesine tıkla.
+Seçim ekranında üç araç vardır:
+
+- **Bölge seç:** Tıkladığın pikselle bağlantılı, rengi **Renk toleransı** sınırında kalan alan silinir. Kopuk ama aynı
+  renkteki alanlar korunur. Tolerans, sağ paneldeki kaydırıcıyla her ikon için ayrı ayarlanır (varsayılan 24).
+- **Fırçayla sil:** Boyadığın alan renginden bağımsız olarak saydamlaştırılır.
+- **Fırçayla koru:** Boyadığın alan hiçbir araçla silinmez. Yanlışlıkla silinen yerleri geri getirmek için kullanılır.
+
+**Maske** görünümünde silinecek alanlar (otomatik kenar temizliği dahil) kırmızıyla, **Sonuç** görünümünde
+saydam hâliyle gösterilir. Fare tekerleği yakınlaştırır, sağ tıkla sürüklemek görüntüyü kaydırır. **Kenar halesini temizle**
+açıkken silinen zemine karışmış kenar pikselleri ya tamamen silinir ya da logonun rengine çekilir. Böylece SVG'de
+logonun etrafında ince renkli bir çerçeve kalmaz. **Geri al** (Ctrl+Z) son düzenlemeyi, **Seçimleri temizle** ise
+tüm düzenlemeleri geri alır. Temizleme işlemi de geri alınabilir.
+
+Silinen alanlar SVG'de gerçek oyuk olarak çıkar. Altta kalan şekiller bu alanlarda boyanmaz. Yollar, aynı renkteki
+ardışık yollar bir `<g data-color="#rrggbb">` grubunda toplanacak şekilde gruplanır. Illustrator, Figma ve Inkscape
+bunları katman olarak gösterir. Soldaki **Katmanlar** listesinde bir rengi gizlemek, o rengi önizlemeden, SVG
+dosyalarından, sprite'tan ve ZIP'ten siler. Kaldırılan rengin altındaki alan da saydam olur.
+
+Bu seçimler önizlemeye, SVG dosyalarına, sprite'a ve ZIP'e birlikte uygulanır. Otomatik algılama veya tek renk
+paleti kuş, yazı ya da benzeri nesneleri anlamsal olarak tanımaz. Karmaşık görsellerde kaldırılacak bölgeleri
+kullanıcı seçmelidir.
 
 İşleme yereldir; PNG görselleri bilgisayardan dışarı gönderilmez. Vektörleştirme kütüphanesinin lisansı `src/main/resources/META-INF/third-party/imagetracerjava-LICENSE.txt` dosyasındadır.

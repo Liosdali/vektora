@@ -1,5 +1,7 @@
 package org.example.export;
 
+import java.awt.geom.Area;
+import java.awt.geom.Path2D;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.StringReader;
@@ -10,8 +12,12 @@ import java.nio.file.Path;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -24,7 +30,6 @@ import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
-import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.ErrorHandler;
 import org.xml.sax.InputSource;
@@ -39,7 +44,7 @@ public final class SvgExportService {
             throw new IllegalArgumentException("Icon and export settings are required");
         }
         SourceSvg source = parseSource(icon.svg());
-        return individualSvg(source, settings);
+        return individualSvg(source, settings, variantSlug(icon));
     }
 
     public void export(
@@ -71,10 +76,8 @@ public final class SvgExportService {
                 throw new IllegalArgumentException("Icon list must not contain null entries");
             }
             SourceSvg source = parseSource(icon.svg());
-            String baseName = slug(icon.iconName())
-                    + (icon.variantName().isBlank() ? "" : "-" + slug(icon.variantName()));
-            String uniqueName = uniqueName(baseName, usedNames);
-            prepared.add(new PreparedIcon(uniqueName, source, individualSvg(source, settings)));
+            String uniqueName = uniqueName(variantSlug(icon), usedNames);
+            prepared.add(new PreparedIcon(uniqueName, source, individualSvg(source, settings, uniqueName)));
         }
         return List.copyOf(prepared);
     }
@@ -117,7 +120,12 @@ public final class SvgExportService {
         }
     }
 
-    private static DocumentBuilder secureBuilder() throws Exception {
+    private static String variantSlug(IconVariant icon) {
+        return slug(icon.iconName())
+                + (icon.variantName().isBlank() ? "" : "-" + slug(icon.variantName()));
+    }
+
+    static DocumentBuilder secureBuilder() throws Exception {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(true);
         factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
@@ -146,7 +154,8 @@ public final class SvgExportService {
         return builder;
     }
 
-    private static String individualSvg(SourceSvg source, SvgExportSettings settings) throws IOException {
+    private static String individualSvg(SourceSvg source, SvgExportSettings settings, String idPrefix)
+            throws IOException {
         try {
             Document output = newDocument();
             Element root = output.createElementNS(SVG_NAMESPACE, "svg");
@@ -155,7 +164,7 @@ public final class SvgExportService {
             root.setAttribute("viewBox", "0 0 " + settings.width() + " " + settings.height());
             root.setAttribute("preserveAspectRatio", "xMidYMid meet");
             output.appendChild(root);
-            appendScaledSource(output, root, source, settings);
+            appendScaledSource(output, root, source, settings, idPrefix);
             return serialize(output);
         } catch (IOException exception) {
             throw exception;
@@ -165,7 +174,7 @@ public final class SvgExportService {
     }
 
     private static void appendScaledSource(
-            Document output, Element parent, SourceSvg source, SvgExportSettings settings) {
+            Document output, Element parent, SourceSvg source, SvgExportSettings settings, String idPrefix) {
         Element viewport = output.createElementNS(SVG_NAMESPACE, "svg");
         double scaledWidth = settings.width() * settings.scale();
         double scaledHeight = settings.height() * settings.scale();
@@ -177,10 +186,58 @@ public final class SvgExportService {
         viewport.setAttribute("preserveAspectRatio", "xMidYMid meet");
         parent.appendChild(viewport);
 
-        NodeList paths = source.document().getElementsByTagNameNS(SVG_NAMESPACE, "path");
-        for (int index = 0; index < paths.getLength(); index++) {
-            Node imported = output.importNode(paths.item(index), true);
-            viewport.appendChild(imported);
+        // ImageTracer stacks filled outlines and paints removed areas with invisible paths, which
+        // hide nothing. Subtract every invisible path from the paths painted before it so removed
+        // areas become real holes, then group consecutive same-color paths so editors show layers
+        // without changing paint order.
+        NodeList sourcePaths = source.document().getElementsByTagNameNS(SVG_NAMESPACE, "path");
+        List<Element> paths = new ArrayList<>(sourcePaths.getLength());
+        for (int index = 0; index < sourcePaths.getLength(); index++) {
+            paths.add((Element) sourcePaths.item(index));
+        }
+        Map<Element, Area> cutPaths = new IdentityHashMap<>();
+        Area removedAfter = new Area();
+        for (int index = paths.size() - 1; index >= 0; index--) {
+            Element path = paths.get(index);
+            Optional<Path2D> shape = SvgPathGeometry.parse(path.getAttribute("d"));
+            if (shape.isEmpty()) {
+                continue;
+            }
+            if (SvgLayers.visibleColor(path) != null) {
+                if (!removedAfter.isEmpty()
+                        && SvgPathGeometry.intersects(shape.get().getBounds2D(), removedAfter.getBounds2D())) {
+                    Area remaining = new Area(shape.get());
+                    remaining.subtract(removedAfter);
+                    cutPaths.put(path, remaining);
+                }
+            } else if (SvgLayers.isCutout(path)) {
+                removedAfter.add(new Area(shape.get()));
+            }
+        }
+
+        Map<String, Integer> groupCounts = new HashMap<>();
+        Element group = null;
+        String groupColor = null;
+        for (Element path : paths) {
+            String color = SvgLayers.visibleColor(path);
+            Area cut = cutPaths.get(path);
+            if (color == null || (cut != null && cut.isEmpty())) {
+                continue;
+            }
+            if (!color.equals(groupColor)) {
+                int count = groupCounts.merge(color, 1, Integer::sum);
+                group = output.createElementNS(SVG_NAMESPACE, "g");
+                group.setAttribute("id", idPrefix + "-" + slug(color) + (count > 1 ? "-" + count : ""));
+                group.setAttribute("data-color", color);
+                viewport.appendChild(group);
+                groupColor = color;
+            }
+            Element imported = (Element) output.importNode(path, true);
+            if (cut != null) {
+                imported.setAttribute("d", SvgPathGeometry.format(cut));
+                imported.setAttribute("fill-rule", SvgPathGeometry.fillRule(cut));
+            }
+            group.appendChild(imported);
         }
     }
 
@@ -217,7 +274,7 @@ public final class SvgExportService {
                 symbol.setAttribute("id", icon.name());
                 symbol.setAttribute("viewBox", "0 0 " + settings.width() + " " + settings.height());
                 definitions.appendChild(symbol);
-                appendScaledSource(output, symbol, icon.source(), settings);
+                appendScaledSource(output, symbol, icon.source(), settings, icon.name());
 
                 long column = index % columns;
                 long row = index / columns;
@@ -259,7 +316,7 @@ public final class SvgExportService {
         return secureBuilder().newDocument();
     }
 
-    private static String serialize(Document document) throws Exception {
+    static String serialize(Document document) throws Exception {
         TransformerFactory factory = TransformerFactory.newInstance();
         factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
         factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");

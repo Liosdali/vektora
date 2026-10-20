@@ -20,15 +20,16 @@ public final class PaletteEditorPane extends VBox {
     public PaletteEditorPane(Consumer<List<List<Color>>> onChange) {
         this.onChange = onChange;
         setSpacing(10);
-        setPadding(new Insets(12));
-        setStyle("-fx-background-color: #151b27; -fx-background-radius: 12;");
+        setPadding(new Insets(4, 0, 0, 0));
 
         Label title = new Label("Renk paletleri");
-        title.setStyle("-fx-text-fill: #e5e7eb; -fx-font-size: 13px; -fx-font-weight: 700;");
+        title.getStyleClass().add("section-title");
         Label description = new Label("Birden fazla palet, ayrı SVG varyantları üretir.");
-        description.setStyle("-fx-text-fill: #8b95a7; -fx-font-size: 11px;");
+        description.getStyleClass().add("muted");
+        description.setWrapText(true);
         Button addPalette = new Button("+ Palet ekle");
-        addPalette.setStyle(buttonStyle());
+        addPalette.getStyleClass().add("secondary");
+        addPalette.setMaxWidth(Double.MAX_VALUE);
         addPalette.setOnAction(event -> addPalette());
         getChildren().addAll(title, description, paletteRows, addPalette);
     }
@@ -41,8 +42,8 @@ public final class PaletteEditorPane extends VBox {
     }
 
     private void addPalette() {
-        addPalette(List.of(javafx.scene.paint.Color.web("#7667F3"),
-                javafx.scene.paint.Color.web("#FFB454")));
+        addPalette(List.of(javafx.scene.paint.Color.web("#1E2A44"),
+                javafx.scene.paint.Color.web("#C8F25C")));
     }
 
     public void addDefaultPalette() {
@@ -66,9 +67,9 @@ public final class PaletteEditorPane extends VBox {
         for (int index = 0; index < editors.size(); index++) {
             int paletteIndex = index;
             Label title = new Label("Palet " + (index + 1));
-            title.setStyle("-fx-text-fill: #cbd5e1; -fx-font-size: 12px; -fx-font-weight: 600;");
+            title.setStyle("-fx-font-weight: 600;");
             Button remove = new Button("Kaldır");
-            remove.setStyle("-fx-background-color: transparent; -fx-text-fill: #a78bfa; -fx-font-size: 10px;");
+            remove.getStyleClass().setAll("link-button");
             remove.setOnAction(event -> {
                 editors.remove(paletteIndex);
                 renderPaletteRows();
@@ -78,9 +79,9 @@ public final class PaletteEditorPane extends VBox {
             FlowPane colors = new FlowPane(6, 6);
             VBox card = new VBox(8, header, colors);
             card.setPadding(new Insets(10));
-            card.setStyle("-fx-background-color: #1d2533; -fx-background-radius: 8;");
+            card.getStyleClass().add("palette-card");
             Button addColor = new Button("+ Renk");
-            addColor.setStyle("-fx-background-color: transparent; -fx-text-fill: #a5b4fc; -fx-font-size: 10px;");
+            addColor.getStyleClass().setAll("link-button");
             addColor.setOnAction(event -> addColorPicker(editors.get(paletteIndex),
                     javafx.scene.paint.Color.WHITE, colors));
             card.getChildren().add(addColor);
@@ -97,7 +98,8 @@ public final class PaletteEditorPane extends VBox {
         colorRow.getChildren().add(picker);
         if (pickers.size() > 1) {
             Button remove = new Button("×");
-            remove.setStyle("-fx-background-color: transparent; -fx-text-fill: #9ca3af;");
+            remove.getStyleClass().add("ghost");
+            remove.setAccessibleText("Rengi kaldır");
             remove.setOnAction(event -> {
                 pickers.remove(picker);
                 colorRow.getChildren().removeAll(picker, remove);
@@ -114,10 +116,5 @@ public final class PaletteEditorPane extends VBox {
     private static Color toAwtColor(javafx.scene.paint.Color color) {
         return new Color((float) color.getRed(), (float) color.getGreen(),
                 (float) color.getBlue(), (float) color.getOpacity());
-    }
-
-    private static String buttonStyle() {
-        return "-fx-background-color: #7667f3; -fx-text-fill: white; -fx-background-radius: 8; "
-                + "-fx-font-weight: 700;";
     }
 }

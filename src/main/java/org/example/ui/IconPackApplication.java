@@ -13,7 +13,9 @@ public final class IconPackApplication extends Application {
         IconPackController controller = new IconPackController(
                 new IconPack(), new ImageTracerVectorizer(), new SvgExportService());
         IconWorkspace workspace = new IconWorkspace(controller);
-        Scene scene = new Scene(workspace, 1280, 820);
+        Scene scene = new Scene(workspace, 1360, 860);
+        scene.getStylesheets().add(
+                IconPackApplication.class.getResource("vektora.css").toExternalForm());
         stage.setTitle("Vektora | PNG'den SVG ikon paketi");
         stage.setMinWidth(960);
         stage.setMinHeight(680);

@@ -4,6 +4,8 @@ import org.example.export.ExportFormat;
 import org.example.export.IconVariant;
 import org.example.export.SvgExportService;
 import org.example.export.SvgExportSettings;
+import org.example.export.SvgLayer;
+import org.example.export.SvgLayers;
 import org.example.model.IconAsset;
 import org.example.model.IconPack;
 import org.example.vector.*;
@@ -114,14 +116,60 @@ public final class IconPackController {
 
     public void addEraseStroke(IconAsset icon, EraseStroke stroke) {
         requireOwnedIcon(icon);
-        Objects.requireNonNull(stroke, "Erase stroke is required");
-        for (PixelCoordinate point : stroke.points()) {
-            if (point.x() < 0 || point.y() < 0
-                    || point.x() >= icon.image().getWidth() || point.y() >= icon.image().getHeight()) {
-                throw new IllegalArgumentException("Erase stroke must be inside the source image");
-            }
-        }
+        requireStrokeInside(icon, stroke);
         pack.addEraseStroke(icon, stroke);
+    }
+
+    public void addProtectStroke(IconAsset icon, EraseStroke stroke) {
+        requireOwnedIcon(icon);
+        requireStrokeInside(icon, stroke);
+        pack.addProtectStroke(icon, stroke);
+    }
+
+    public BackgroundSelection backgroundSelection(IconAsset icon) {
+        requireOwnedIcon(icon);
+        return pack.backgroundSelection(icon);
+    }
+
+    public void setBackgroundTolerance(IconAsset icon, int tolerance) {
+        requireOwnedIcon(icon);
+        if (tolerance < 0 || tolerance > BackgroundSelection.MAX_TOLERANCE) {
+            throw new IllegalArgumentException("Tolerance is out of range");
+        }
+        pack.setBackgroundTolerance(icon, tolerance);
+    }
+
+    public void setDefringe(IconAsset icon, boolean defringe) {
+        requireOwnedIcon(icon);
+        pack.setDefringe(icon, defringe);
+    }
+
+    public boolean canUndoBackgroundEdit(IconAsset icon) {
+        requireOwnedIcon(icon);
+        return pack.canUndoBackgroundEdit(icon);
+    }
+
+    public boolean undoBackgroundEdit(IconAsset icon) {
+        requireOwnedIcon(icon);
+        return pack.undoBackgroundEdit(icon);
+    }
+
+    /** The source image after manual and automatic background removal, as the tracer will see it. */
+    public BufferedImage processedSource(IconAsset icon) {
+        requireOwnedIcon(icon);
+        return BackgroundRegionProcessor.removeBorderBackground(
+                BackgroundRegionProcessor.removeSelection(icon.image(), pack.backgroundSelection(icon)));
+    }
+
+    public void setLayerHidden(IconAsset icon, String color, boolean hidden) {
+        requireOwnedIcon(icon);
+        Objects.requireNonNull(color, "Layer color is required");
+        pack.setLayerHidden(icon, color, hidden);
+    }
+
+    public Set<String> hiddenLayerColors(IconAsset icon) {
+        requireOwnedIcon(icon);
+        return pack.hiddenLayerColors(icon);
     }
 
     public List<EraseStroke> eraseStrokes(IconAsset icon) {
@@ -135,14 +183,22 @@ public final class IconPackController {
     }
 
     public List<IconVariant> preview(IconAsset icon) throws VectorizationException, IOException {
+        return previewWithLayers(icon).variants();
+    }
+
+    /** Preview variants with hidden layers left out, plus every layer of the first variant. */
+    public IconPreview previewWithLayers(IconAsset icon) throws VectorizationException, IOException {
         requireOwnedIcon(icon);
-        List<IconVariant> variants = createVariants(icon);
-        List<IconVariant> previews = new ArrayList<>(variants.size());
-        for (IconVariant variant : variants) {
-            String svg = exportService.renderSvg(variant, pack.exportSettings());
+        List<IconVariant> traced = traceVariants(icon, pack.backgroundSelection(icon));
+        Set<String> hidden = pack.hiddenLayerColors(icon);
+        List<IconVariant> previews = new ArrayList<>(traced.size());
+        for (IconVariant variant : traced) {
+            IconVariant visible = withoutHiddenLayers(variant, hidden);
+            String svg = exportService.renderSvg(visible, pack.exportSettings());
             previews.add(new IconVariant(variant.iconName(), variant.variantName(), svg));
         }
-        return List.copyOf(previews);
+        List<SvgLayer> layers = traced.isEmpty() ? List.of() : SvgLayers.layers(traced.getFirst().svg());
+        return new IconPreview(previews, layers);
     }
 
     public void export(Path destination, ExportFormat format) throws IOException, VectorizationException {
@@ -167,16 +223,33 @@ public final class IconPackController {
         for (IconAsset icon : pack.icons()) {
             BackgroundSelection selection =
                     backgroundSelections.getOrDefault(icon, BackgroundSelection.EMPTY);
-            variants.addAll(createVariants(icon, selection));
+            Set<String> hidden = pack.hiddenLayerColors(icon);
+            for (IconVariant variant : traceVariants(icon, selection)) {
+                variants.add(withoutHiddenLayers(variant, hidden));
+            }
         }
         exportService.export(variants, pack.exportSettings(), destination, format);
     }
 
-    private List<IconVariant> createVariants(IconAsset icon) throws VectorizationException {
-        return createVariants(icon, pack.backgroundSelection(icon));
+    private static IconVariant withoutHiddenLayers(IconVariant variant, Set<String> hidden) throws IOException {
+        if (hidden.isEmpty()) {
+            return variant;
+        }
+        return new IconVariant(variant.iconName(), variant.variantName(),
+                SvgLayers.withColorsRemoved(variant.svg(), hidden));
     }
 
-    private List<IconVariant> createVariants(IconAsset icon, BackgroundSelection selection)
+    private static void requireStrokeInside(IconAsset icon, EraseStroke stroke) {
+        Objects.requireNonNull(stroke, "Stroke is required");
+        for (PixelCoordinate point : stroke.points()) {
+            if (point.x() < 0 || point.y() < 0
+                    || point.x() >= icon.image().getWidth() || point.y() >= icon.image().getHeight()) {
+                throw new IllegalArgumentException("Erase stroke must be inside the source image");
+            }
+        }
+    }
+
+    private List<IconVariant> traceVariants(IconAsset icon, BackgroundSelection selection)
             throws VectorizationException {
         BufferedImage image = BackgroundRegionProcessor.removeSelection(icon.image(), selection);
         List<List<Color>> palettes = pack.palettes();

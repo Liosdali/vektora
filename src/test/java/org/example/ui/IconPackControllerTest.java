@@ -210,6 +210,79 @@ class IconPackControllerTest {
                 () -> controller.backgroundRemovalSeeds(equalButDistinct));
     }
 
+    @Test
+    void undoRevertsBackgroundEditsOneStepAtATime(@TempDir Path directory) throws Exception {
+        Path source = writePng(directory.resolve("sun.png"), Color.ORANGE);
+        IconPackController controller = controller();
+        controller.addImages(List.of(source));
+        IconAsset icon = controller.pack().icons().getFirst();
+        PixelCoordinate seed = new PixelCoordinate(2, 2);
+        org.example.vector.EraseStroke stroke =
+                new org.example.vector.EraseStroke(List.of(new PixelCoordinate(1, 1)), 1);
+
+        assertFalse(controller.canUndoBackgroundEdit(icon));
+        controller.addBackgroundRemovalSeed(icon, seed);
+        controller.addEraseStroke(icon, stroke);
+        controller.setBackgroundTolerance(icon, 60);
+        controller.clearBackgroundRemovalSeeds(icon);
+
+        assertTrue(controller.undoBackgroundEdit(icon));
+        assertEquals(List.of(seed), controller.backgroundRemovalSeeds(icon));
+        assertEquals(List.of(stroke), controller.eraseStrokes(icon));
+        assertEquals(60, controller.backgroundSelection(icon).tolerance());
+        assertTrue(controller.undoBackgroundEdit(icon));
+        assertTrue(controller.eraseStrokes(icon).isEmpty());
+        assertTrue(controller.undoBackgroundEdit(icon));
+        assertTrue(controller.backgroundRemovalSeeds(icon).isEmpty());
+        assertFalse(controller.undoBackgroundEdit(icon));
+    }
+
+    @Test
+    void protectStrokesRestorePixelsInTheProcessedSource(@TempDir Path directory) throws Exception {
+        Path source = writePng(directory.resolve("sun.png"), Color.ORANGE);
+        IconPackController controller = controller();
+        controller.addImages(List.of(source));
+        IconAsset icon = controller.pack().icons().getFirst();
+
+        controller.addBackgroundRemovalSeed(icon, new PixelCoordinate(3, 3));
+        assertEquals(0, controller.processedSource(icon).getRGB(3, 3) >>> 24);
+        controller.addProtectStroke(icon,
+                new org.example.vector.EraseStroke(List.of(new PixelCoordinate(3, 3)), 1));
+
+        assertEquals(255, controller.processedSource(icon).getRGB(3, 3) >>> 24);
+        assertEquals(0, controller.processedSource(icon).getRGB(5, 5) >>> 24);
+    }
+
+    @Test
+    void hiddenLayersAreListedButLeftOutOfPreviewAndExport(@TempDir Path directory) throws Exception {
+        BufferedImage image = new BufferedImage(8, 8, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 1; y < 7; y++) {
+            for (int x = 1; x < 7; x++) {
+                image.setRGB(x, y, (x < 4 ? Color.RED : Color.BLUE).getRGB());
+            }
+        }
+        Path source = directory.resolve("split.png");
+        ImageIO.write(image, "png", source.toFile());
+        IconPackController controller = controller();
+        controller.addImages(List.of(source));
+        IconAsset icon = controller.pack().icons().getFirst();
+
+        controller.setLayerHidden(icon, "#ff0000", true);
+        IconPreview preview = controller.previewWithLayers(icon);
+
+        assertEquals(List.of("#ff0000", "#0000ff"),
+                preview.layers().stream().map(org.example.export.SvgLayer::color).toList());
+        String svg = preview.variants().getFirst().svg();
+        assertFalse(svg.contains("rgb(255,0,0)"));
+        assertTrue(svg.contains("rgb(0,0,255)"));
+
+        Path exported = directory.resolve("out");
+        controller.export(exported, ExportFormat.INDIVIDUAL_SVGS);
+        String exportedSvg = Files.readString(exported.resolve("split-default.svg"));
+        assertFalse(exportedSvg.contains("rgb(255,0,0)"));
+        assertTrue(exportedSvg.contains("data-color=\"#0000ff\""));
+    }
+
     private static IconPackController controller() {
         return new IconPackController(new IconPack(), new ImageTracerVectorizer(), new SvgExportService());
     }

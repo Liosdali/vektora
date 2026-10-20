@@ -1,0 +1,331 @@
+/* Vektora "Stüdyo" teması: koyu grafit zemin, lime vurgu. */
+.root {
+    -vk-bg: #0f1013;
+    -vk-panel: #16171b;
+    -vk-raised: #1e2025;
+    -vk-hover: #23262c;
+    -vk-border: #2a2c33;
+    -vk-border-strong: #3a3d45;
+    -vk-text: #ecedef;
+    -vk-text-soft: #c9cbd1;
+    -vk-muted: #9a9ea8;
+    -vk-accent: #c8f25c;
+    -vk-on-accent: #0f1013;
+
+    -fx-base: #1e2025;
+    -fx-background: #0f1013;
+    -fx-control-inner-background: #1e2025;
+    -fx-control-inner-background-alt: #1b1d21;
+    -fx-accent: #c8f25c;
+    -fx-focus-color: #c8f25c;
+    -fx-faint-focus-color: #c8f25c22;
+    -fx-selection-bar: #2a2c33;
+    -fx-selection-bar-non-focused: #23262c;
+    -fx-font-family: "Segoe UI";
+    -fx-font-size: 13px;
+    -fx-background-color: -vk-bg;
+}
+
+.label {
+    -fx-text-fill: -vk-text;
+}
+
+/* Başlık ve durum çubukları */
+.app-header {
+    -fx-background-color: -vk-panel;
+    -fx-border-color: transparent transparent -vk-border transparent;
+    -fx-padding: 12 20 12 20;
+}
+
+.brand-mark {
+    -fx-background-color: -vk-accent;
+    -fx-background-radius: 8;
+    -fx-text-fill: -vk-on-accent;
+    -fx-font-size: 15px;
+    -fx-font-weight: 800;
+    -fx-min-width: 30;
+    -fx-min-height: 30;
+    -fx-alignment: center;
+}
+
+.brand-title {
+    -fx-font-size: 16px;
+    -fx-font-weight: 700;
+}
+
+.status-bar {
+    -fx-background-color: -vk-panel;
+    -fx-border-color: -vk-border transparent transparent transparent;
+    -fx-padding: 8 20 8 20;
+}
+
+.status-bar .label {
+    -fx-text-fill: -vk-muted;
+    -fx-font-size: 12px;
+}
+
+/* Paneller */
+.panel {
+    -fx-background-color: -vk-panel;
+    -fx-background-radius: 12;
+    -fx-padding: 16;
+}
+
+.panel-section {
+    -fx-padding: 0 0 14 0;
+    -fx-border-color: transparent transparent -vk-border transparent;
+}
+
+.section-title {
+    -fx-font-size: 13px;
+    -fx-font-weight: 700;
+    -fx-text-fill: -vk-text;
+}
+
+.muted {
+    -fx-font-size: 11px;
+    -fx-text-fill: -vk-muted;
+}
+
+.value-label {
+    -fx-font-family: "Consolas";
+    -fx-font-size: 12px;
+    -fx-text-fill: -vk-accent;
+}
+
+.mono {
+    -fx-font-family: "Consolas";
+    -fx-font-size: 11px;
+    -fx-text-fill: -vk-muted;
+}
+
+/* Düğmeler */
+.button, .menu-button, .toggle-button {
+    -fx-background-radius: 8;
+    -fx-border-radius: 8;
+    -fx-cursor: hand;
+}
+
+.button.primary, .menu-button.primary {
+    -fx-background-color: -vk-accent;
+    -fx-text-fill: -vk-on-accent;
+    -fx-font-weight: 700;
+    -fx-padding: 8 16 8 16;
+}
+
+.menu-button.primary > .label {
+    -fx-text-fill: -vk-on-accent;
+}
+
+.menu-button.primary > .arrow-button > .arrow {
+    -fx-background-color: -vk-on-accent;
+}
+
+.button.primary:hover, .menu-button.primary:hover {
+    -fx-background-color: #d9ff7a;
+}
+
+.button.secondary {
+    -fx-background-color: -vk-raised;
+    -fx-border-color: -vk-border-strong;
+    -fx-text-fill: -vk-text;
+    -fx-padding: 8 12 8 12;
+}
+
+.button.secondary:hover {
+    -fx-background-color: -vk-hover;
+}
+
+.button.ghost {
+    -fx-background-color: transparent;
+    -fx-text-fill: -vk-text-soft;
+    -fx-padding: 4 8 4 8;
+}
+
+.button.ghost:hover {
+    -fx-background-color: -vk-hover;
+}
+
+.button:disabled, .menu-button:disabled, .toggle-button:disabled {
+    -fx-opacity: 0.4;
+}
+
+/* Bölümlü seçim (araç ve görünüm) */
+.segmented {
+    -fx-background-color: -vk-bg;
+    -fx-background-radius: 9;
+    -fx-border-color: -vk-border;
+    -fx-border-radius: 9;
+    -fx-padding: 3;
+    -fx-spacing: 2;
+}
+
+.segmented .toggle-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: -vk-muted;
+    -fx-background-radius: 6;
+    -fx-padding: 6 12 6 12;
+    -fx-font-size: 12px;
+}
+
+.segmented .toggle-button:hover {
+    -fx-text-fill: -vk-text;
+}
+
+.segmented .toggle-button:selected {
+    -fx-background-color: -vk-accent;
+    -fx-text-fill: -vk-on-accent;
+    -fx-font-weight: 700;
+}
+
+/* Form öğeleri */
+.text-field, .combo-box, .spinner, .color-picker {
+    -fx-background-color: -vk-raised;
+    -fx-background-radius: 7;
+    -fx-border-color: -vk-border;
+    -fx-border-radius: 7;
+    -fx-text-fill: -vk-text;
+    -fx-prompt-text-fill: #6e727c;
+}
+
+.slider .track {
+    -fx-background-color: -vk-border-strong;
+    -fx-background-radius: 3;
+    -fx-pref-height: 4;
+}
+
+.slider .thumb {
+    -fx-background-color: -vk-accent;
+    -fx-background-radius: 8;
+    -fx-padding: 7;
+}
+
+.check-box {
+    -fx-text-fill: -vk-text;
+}
+
+.check-box .box {
+    -fx-background-color: -vk-raised;
+    -fx-border-color: -vk-border-strong;
+    -fx-border-radius: 4;
+    -fx-background-radius: 4;
+}
+
+.check-box:selected .box {
+    -fx-background-color: -vk-accent;
+    -fx-border-color: -vk-accent;
+}
+
+.check-box:selected .mark {
+    -fx-background-color: -vk-on-accent;
+}
+
+/* Listeler */
+.list-view {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-padding: 0;
+}
+
+.list-view .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: -vk-text;
+    -fx-padding: 6 8 6 8;
+    -fx-background-radius: 8;
+}
+
+.list-view .list-cell:filled:hover {
+    -fx-background-color: -vk-hover;
+}
+
+.list-view .list-cell:filled:selected {
+    -fx-background-color: -vk-hover;
+    -fx-border-color: -vk-accent;
+    -fx-border-radius: 8;
+}
+
+/* Katmanlar */
+.layer-row {
+    -fx-background-radius: 8;
+    -fx-padding: 2 8 2 2;
+    -fx-spacing: 8;
+    -fx-alignment: center-left;
+    -fx-min-height: 34;
+}
+
+.layer-row:hover {
+    -fx-background-color: -vk-hover;
+}
+
+.layer-row.hidden-layer .label {
+    -fx-text-fill: #6e727c;
+}
+
+.layer-swatch {
+    -fx-min-width: 14;
+    -fx-min-height: 14;
+    -fx-max-width: 14;
+    -fx-max-height: 14;
+    -fx-background-radius: 4;
+    -fx-border-color: -vk-border-strong;
+    -fx-border-radius: 4;
+}
+
+.eye-toggle {
+    -fx-background-color: transparent;
+    -fx-padding: 2 8 2 8;
+    -fx-text-fill: -vk-accent;
+    -fx-font-size: 11px;
+    -fx-font-weight: 700;
+}
+
+.eye-toggle:selected {
+    -fx-text-fill: #6e727c;
+}
+
+/* Önizleme ve seçim yüzeyi */
+.canvas-panel {
+    -fx-background-color: -vk-panel;
+    -fx-background-radius: 12;
+    -fx-padding: 16;
+}
+
+.canvas-title {
+    -fx-font-size: 16px;
+    -fx-font-weight: 700;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab {
+    -fx-background-color: -vk-raised;
+    -fx-background-radius: 8 8 0 0;
+}
+
+.tab-pane > .tab-header-area > .headers-region > .tab:selected {
+    -fx-background-color: -vk-hover;
+}
+
+.tab-pane > .tab-header-area > .tab-header-background {
+    -fx-background-color: transparent;
+}
+
+.scroll-pane, .scroll-pane > .viewport {
+    -fx-background-color: transparent;
+}
+
+.separator .line {
+    -fx-border-color: -vk-border transparent transparent transparent;
+}
+
+.palette-card {
+    -fx-background-color: -vk-raised;
+    -fx-background-radius: 8;
+    -fx-padding: 10;
+}
+
+.link-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: -vk-accent;
+    -fx-font-size: 11px;
+    -fx-padding: 2 4 2 4;
+    -fx-cursor: hand;
+}

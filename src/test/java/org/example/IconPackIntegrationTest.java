@@ -75,13 +75,9 @@ class IconPackIntegrationTest {
                     var paths = document.getElementsByTagNameNS(
                             "http://www.w3.org/2000/svg", "path");
                     assertTrue(paths.getLength() > 0);
-                    boolean hasTransparentPath = false;
-                    for (int index = 0; index < paths.getLength(); index++) {
-                        if ("0.0".equals(((Element) paths.item(index)).getAttribute("opacity"))) {
-                            hasTransparentPath = true;
-                        }
-                    }
-                    assertTrue(hasTransparentPath);
+                    // Transparent pixels stay unpainted: only the palette color is drawn.
+                    assertTrue(Set.of("rgb(0,0,255)", "rgb(0,255,0)")
+                            .containsAll(visiblePathFills(document)));
                     svgCount++;
                 }
                 zip.closeEntry();
@@ -111,7 +107,8 @@ class IconPackIntegrationTest {
         Set<String> secondGeometry = pathGeometry(parse(secondPreview));
         assertNotEquals(firstGeometry, secondGeometry);
         assertEquals(Set.of("rgb(0,0,255)"), visiblePathFills(parse(firstPreview)));
-        assertTrue(pathOpacities(parse(firstPreview)).contains("0.0"));
+        // The selected interior is cut out of the blue silhouette instead of being painted over.
+        assertTrue(firstGeometry.stream().anyMatch(data -> data.chars().filter(c -> c == 'M').count() > 1));
 
         Path individualDirectory = directory.resolve("individual");
         controller.export(individualDirectory, ExportFormat.INDIVIDUAL_SVGS);
@@ -217,15 +214,6 @@ class IconPackIntegrationTest {
             }
         }
         return fills;
-    }
-
-    private static Set<String> pathOpacities(Document document) {
-        NodeList paths = document.getElementsByTagNameNS(SVG_NAMESPACE, "path");
-        Set<String> opacities = new HashSet<>();
-        for (int index = 0; index < paths.getLength(); index++) {
-            opacities.add(((Element) paths.item(index)).getAttribute("opacity"));
-        }
-        return opacities;
     }
 
     private static Map<String, String> zipEntries(Path archive) throws Exception {

@@ -92,6 +92,76 @@ class SvgExportServiceTest {
     }
 
     @Test
+    void groupsPathsIntoOneLayerPerFillColorAndDropsInvisiblePaths() throws Exception {
+        String layered = """
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">
+                  <path fill="rgb(0,0,0)" opacity="0.0" d="M 0 0 L 10 0 Z"/>
+                  <path fill="rgb(30,42,68)" opacity="1.0" d="M 1 1 L 2 2 Z"/>
+                  <path fill="rgb(30,42,68)" opacity="1.0" d="M 3 3 L 4 4 Z"/>
+                  <path fill="rgb(201,206,214)" opacity="1.0" d="M 5 5 L 6 6 Z"/>
+                </svg>
+                """;
+
+        Element root = parse(service.renderSvg(new IconVariant("Badge", "default", layered),
+                new SvgExportSettings(16, 16, 1))).getDocumentElement();
+
+        NodeList groups = root.getElementsByTagName("g");
+        assertEquals(2, groups.getLength());
+        Element navy = (Element) groups.item(0);
+        assertEquals("badge-default-1e2a44", navy.getAttribute("id"));
+        assertEquals("#1e2a44", navy.getAttribute("data-color"));
+        assertEquals(2, navy.getElementsByTagName("path").getLength());
+        assertEquals(1, ((Element) groups.item(1)).getElementsByTagName("path").getLength());
+        assertEquals(3, root.getElementsByTagName("path").getLength());
+    }
+
+    @Test
+    void turnsInvisiblePathsIntoHolesInEverythingPaintedBeforeThem() throws Exception {
+        String stacked = """
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">
+                  <path fill="rgb(0,0,255)" opacity="1.0" d="M 0 0 L 10 0 L 10 10 L 0 10 Z"/>
+                  <path fill="rgb(0,0,0)" opacity="0.0" d="M 2 2 L 8 2 L 8 8 L 2 8 Z"/>
+                  <path fill="rgb(255,0,0)" opacity="1.0" d="M 4 4 L 6 4 L 6 6 L 4 6 Z"/>
+                </svg>
+                """;
+
+        Element root = parse(service.renderSvg(new IconVariant("Badge", "", stacked),
+                new SvgExportSettings(16, 16, 1))).getDocumentElement();
+
+        assertEquals(0, root.getElementsByTagName("mask").getLength());
+        NodeList groups = root.getElementsByTagName("g");
+        assertEquals(2, groups.getLength());
+        Element blue = (Element) ((Element) groups.item(0)).getElementsByTagName("path").item(0);
+        assertEquals("#0000ff", ((Element) groups.item(0)).getAttribute("data-color"));
+        assertEquals(2, blue.getAttribute("d").chars().filter(character -> character == 'M').count());
+        assertTrue(blue.getAttribute("d").contains("8 8"));
+        Element red = (Element) ((Element) groups.item(1)).getElementsByTagName("path").item(0);
+        assertEquals("#ff0000", ((Element) groups.item(1)).getAttribute("data-color"));
+        assertEquals("M 4 4 L 6 4 L 6 6 L 4 6 Z", red.getAttribute("d"));
+        assertEquals(2, root.getElementsByTagName("path").getLength());
+    }
+
+    @Test
+    void keepsPaintOrderWhenAColorReturnsAboveAnotherColor() throws Exception {
+        String interleaved = """
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">
+                  <path fill="rgb(0,0,255)" d="M 0 0 L 10 0 L 10 10 Z"/>
+                  <path fill="rgb(255,0,0)" d="M 1 1 L 9 1 L 9 9 Z"/>
+                  <path fill="rgb(0,0,255)" d="M 2 2 L 8 2 L 8 8 Z"/>
+                </svg>
+                """;
+
+        Element root = parse(service.renderSvg(new IconVariant("Mark", "", interleaved),
+                new SvgExportSettings(16, 16, 1))).getDocumentElement();
+
+        NodeList groups = root.getElementsByTagName("g");
+        assertEquals(3, groups.getLength());
+        assertEquals("mark-0000ff", ((Element) groups.item(0)).getAttribute("id"));
+        assertEquals("mark-ff0000", ((Element) groups.item(1)).getAttribute("id"));
+        assertEquals("mark-0000ff-2", ((Element) groups.item(2)).getAttribute("id"));
+    }
+
+    @Test
     void duplicateVariantNamesReceiveStableUniqueFileNames(@TempDir Path directory) throws Exception {
         service.export(
                 List.of(

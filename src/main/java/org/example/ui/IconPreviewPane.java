@@ -15,12 +15,12 @@ public final class IconPreviewPane extends BorderPane {
     private final Label heading = new Label("Önizleme");
 
     public IconPreviewPane() {
-        setStyle("-fx-background-color: #111827; -fx-background-radius: 16; -fx-padding: 20;");
-        heading.setStyle("-fx-font-size: 18px; -fx-font-weight: 700; -fx-text-fill: #f3f4f6;");
-        Label hint = new Label("Vektör görünümünü kontrol et");
-        hint.setStyle("-fx-font-size: 12px; -fx-text-fill: #9ca3af;");
+        getStyleClass().add("canvas-panel");
+        heading.getStyleClass().add("canvas-title");
+        Label hint = new Label("SVG çıktısı · dama deseni saydam alanları gösterir");
+        hint.getStyleClass().add("muted");
         VBox header = new VBox(4, heading, hint);
-        header.setStyle("-fx-padding: 0 0 16 0;");
+        header.setStyle("-fx-padding: 0 0 12 0;");
         setTop(header);
         setCenter(previews);
         VBox.setVgrow(previews, Priority.ALWAYS);
@@ -49,9 +49,9 @@ public final class IconPreviewPane extends BorderPane {
         webView.setContextMenuEnabled(false);
         webView.getEngine().loadContent("""
                 <!doctype html><html><head><style>
-                html,body{height:100%;margin:0;background:#151b27;color:#94a3b8;font:14px system-ui}
+                html,body{height:100%;margin:0;background:#151619;color:#9a9ea8;font:14px 'Segoe UI',system-ui}
                 body{display:grid;place-items:center;text-align:center}
-                </style></head><body><div><div style="font-size:48px;color:#7c6cf0">◇</div>
+                </style></head><body><div><div style="font-size:48px;color:#c8f25c">◇</div>
                 Bir PNG ekle, SVG önizlemen burada görünsün.</div></body></html>
                 """);
         Tab tab = new Tab("SVG", webView);
@@ -62,9 +62,12 @@ public final class IconPreviewPane extends BorderPane {
     private static String previewDocument(String svg) {
         return """
                 <!doctype html><html><head><meta charset="utf-8"><style>
-                html,body{height:100%%;margin:0;background:#151b27}
-                body{display:grid;place-items:center;padding:20px;box-sizing:border-box}
-                svg{width:min(100%%,420px);height:min(100%%,420px);filter:drop-shadow(0 16px 30px #0006)}
+                html,body{height:100%%;margin:0;background:#151619}
+                body{display:grid;place-items:center;padding:20px;box-sizing:border-box;background-color:#1b1d21;
+                  background-image:linear-gradient(45deg,#24262b 25%%,transparent 25%%,transparent 75%%,#24262b 75%%),
+                    linear-gradient(45deg,#24262b 25%%,transparent 25%%,transparent 75%%,#24262b 75%%);
+                  background-size:20px 20px;background-position:0 0,10px 10px}
+                svg{width:min(100%%,440px);height:min(100%%,440px)}
                 </style></head><body>%s</body></html>
                 """.formatted(svg);
     }

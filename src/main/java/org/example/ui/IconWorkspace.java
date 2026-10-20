@@ -5,20 +5,26 @@ import javafx.collections.ObservableList;
 import javafx.concurrent.Task;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyCodeCombination;
+import javafx.scene.input.KeyCombination;
 import javafx.scene.layout.*;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.Window;
 import org.example.export.ExportFormat;
-import org.example.export.IconVariant;
 import org.example.export.SvgExportSettings;
 import org.example.model.IconAsset;
+import org.example.vector.BackgroundSelection;
 import org.example.vector.TraceOptions;
 import org.example.vector.VectorizationException;
 
@@ -26,17 +32,24 @@ import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 public final class IconWorkspace extends BorderPane {
+    private static final KeyCombination UNDO = new KeyCodeCombination(KeyCode.Z, KeyCombination.SHORTCUT_DOWN);
+
     private final IconPackController controller;
     private final ObservableList<IconAsset> icons = FXCollections.observableArrayList();
     private final ListView<IconAsset> iconList = new ListView<>(icons);
+    private final Map<IconAsset, Image> thumbnails = new IdentityHashMap<>();
     private final IconPreviewPane previewPane = new IconPreviewPane();
     private final BackgroundRegionPickerPane backgroundPicker = new BackgroundRegionPickerPane();
     private final StackPane previewStack = new StackPane(previewPane, backgroundPicker);
+    private final LayerListPane layerList = new LayerListPane();
     private final PaletteEditorPane paletteEditor;
     private final ComboBox<ModeOption> colorMode = new ComboBox<>();
     private final Spinner<Integer> colorCount = new Spinner<>(2, 256, 16, 2);
@@ -44,27 +57,33 @@ public final class IconWorkspace extends BorderPane {
     private final TextField heightField = new TextField("128");
     private final TextField scaleField = new TextField("1.0");
     private final Button importButton = new Button("PNG/JPG ekle");
-    private final Button selectBackgroundButton = new Button("Arka plan bölgelerini seç");
+    private final Button undoButton = new Button("Geri al");
+    private final Button selectBackgroundButton = new Button("Arka planı ayır");
     private final Button showSvgPreviewButton = new Button("SVG önizlemesine dön");
     private final Button clearBackgroundButton = new Button("Seçimleri temizle");
+    private final Slider toleranceSlider = new Slider(0, BackgroundSelection.MAX_TOLERANCE,
+            BackgroundSelection.DEFAULT_TOLERANCE);
+    private final Label toleranceValue = new Label(Integer.toString(BackgroundSelection.DEFAULT_TOLERANCE));
+    private final CheckBox defringeBox = new CheckBox("Kenar halesini temizle");
     private final MenuButton exportButton = new MenuButton("Dışa aktar");
     private final Label status = new Label("PNG ikonlarını ekleyerek yeni bir paket oluştur.");
     private final Label packageCount = new Label("0 ikon");
     private final ProgressIndicator progress = new ProgressIndicator();
     private final PreviewRequestTracker previewRequests = new PreviewRequestTracker();
+    private final VBox settingsPane = new VBox(14);
     private boolean selectingBackground;
+    private boolean syncingBackgroundControls;
 
     public IconWorkspace(IconPackController controller) {
         this.controller = controller;
         paletteEditor = new PaletteEditorPane(this::onPalettesChanged);
-        setStyle("-fx-background-color: #0b0e14; -fx-font-family: 'Segoe UI';");
         buildHeader();
         buildWorkspace();
         buildStatusBar();
         configureControls();
         backgroundPicker.setVisible(false);
         backgroundPicker.setManaged(false);
-        progress.setPrefSize(18, 18);
+        progress.setPrefSize(16, 16);
         progress.setVisible(false);
         iconList.getSelectionModel().selectedItemProperty()
                 .addListener((observable, previous, selected) -> {
@@ -74,133 +93,171 @@ public final class IconWorkspace extends BorderPane {
                         loadBackgroundPicker(selected);
                     }
                 });
+        sceneProperty().addListener((observable, previous, scene) -> registerShortcuts(scene));
+    }
+
+    private void registerShortcuts(Scene scene) {
+        if (scene != null) {
+            scene.getAccelerators().put(UNDO, this::undoBackgroundEdit);
+        }
     }
 
     private void buildHeader() {
         Label mark = new Label("V");
-        mark.setStyle("-fx-background-color: #7667f3; -fx-text-fill: white; -fx-font-size: 15px; "
-                + "-fx-font-weight: 800; -fx-padding: 8 12; -fx-background-radius: 10;");
+        mark.getStyleClass().add("brand-mark");
         Label title = new Label("Vektora");
-        title.setStyle("-fx-text-fill: #f8fafc; -fx-font-size: 20px; -fx-font-weight: 800;");
-        Label subtitle = new Label("PNG ikonlarını vektörleştir, renklerini düzenle ve paketle.");
-        subtitle.setStyle("-fx-text-fill: #929bad; -fx-font-size: 12px;");
-        VBox titles = new VBox(3, title, subtitle);
+        title.getStyleClass().add("brand-title");
+        Label subtitle = new Label("Görseli arka planından ayır, katmanlarını düzenle, SVG logo olarak paketle.");
+        subtitle.getStyleClass().add("muted");
+        VBox titles = new VBox(1, title, subtitle);
         HBox brand = new HBox(12, mark, titles);
         brand.setAlignment(Pos.CENTER_LEFT);
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        packageCount.setStyle("-fx-text-fill: #aab3c2; -fx-font-size: 12px;");
+        packageCount.getStyleClass().add("mono");
 
-        importButton.setStyle(primaryButtonStyle());
+        undoButton.getStyleClass().add("secondary");
+        undoButton.setTooltip(new Tooltip("Son arka plan düzenlemesini geri al (Ctrl+Z)"));
+        undoButton.setOnAction(event -> undoBackgroundEdit());
+        importButton.getStyleClass().add("secondary");
         importButton.setOnAction(event -> choosePngs());
         configureExportMenu();
-        exportButton.setStyle(primaryButtonStyle());
-        HBox actions = new HBox(10, packageCount, importButton, exportButton);
+        exportButton.getStyleClass().add("primary");
+        HBox actions = new HBox(10, packageCount, undoButton, importButton, exportButton);
         actions.setAlignment(Pos.CENTER_RIGHT);
         HBox header = new HBox(16, brand, spacer, actions);
         header.setAlignment(Pos.CENTER_LEFT);
-        header.setPadding(new Insets(22, 28, 20, 28));
-        header.setStyle("-fx-background-color: #111621; -fx-border-color: transparent transparent #252c39 transparent;");
+        header.getStyleClass().add("app-header");
         setTop(header);
     }
 
     private void buildWorkspace() {
-        Label listTitle = sectionTitle("İkonlar");
-        Label listHint = mutedLabel("Paketteki PNG dosyaları");
-        iconList.setPlaceholder(new Label("Henüz ikon yok"));
-        iconList.setPrefWidth(220);
+        Label listTitle = sectionTitle("Paket");
+        Label listHint = mutedLabel("Bir görsel seçerek düzenle");
+        iconList.setPlaceholder(mutedLabel("Henüz görsel yok"));
         iconList.setCellFactory(list -> new ListCell<>() {
+            private final ImageView thumbnail = new ImageView();
+
+            {
+                thumbnail.setFitWidth(36);
+                thumbnail.setFitHeight(36);
+                thumbnail.setPreserveRatio(true);
+            }
+
             @Override
             protected void updateItem(IconAsset item, boolean empty) {
                 super.updateItem(item, empty);
                 if (empty || item == null) {
                     setText(null);
+                    setGraphic(null);
                 } else {
+                    thumbnail.setImage(thumbnails.computeIfAbsent(item,
+                            icon -> FxImages.toFxImage(icon.image())));
                     setText(item.name() + "\n" + item.image().getWidth() + " × " + item.image().getHeight());
+                    setGraphic(thumbnail);
+                    setGraphicTextGap(10);
                 }
-                setStyle("-fx-text-fill: #e2e8f0; -fx-padding: 12 10; -fx-font-size: 12px;");
             }
         });
-        VBox iconSidebar = new VBox(10, listTitle, listHint, iconList);
-        iconSidebar.setPadding(new Insets(18));
-        iconSidebar.setPrefWidth(250);
-        iconSidebar.setStyle("-fx-background-color: #111621; -fx-background-radius: 14;");
+        iconList.setPrefHeight(260);
         VBox.setVgrow(iconList, Priority.ALWAYS);
+        ScrollPane layerScroll = new ScrollPane(layerList);
+        layerScroll.setFitToWidth(true);
+        layerScroll.setPrefViewportHeight(220);
+        layerScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        VBox iconSidebar = new VBox(10, listTitle, listHint, iconList, new Separator(), layerScroll);
+        iconSidebar.getStyleClass().add("panel");
+        iconSidebar.setPrefWidth(270);
+        iconSidebar.setMinWidth(230);
 
         buildSettingsPane();
-        HBox content = new HBox(16, iconSidebar, previewStack, settingsPane);
-        content.setPadding(new Insets(20, 24, 16, 24));
+        ScrollPane settingsScroll = new ScrollPane(settingsPane);
+        settingsScroll.setFitToWidth(true);
+        settingsScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        settingsScroll.setPrefWidth(320);
+        settingsScroll.setMinWidth(280);
+        settingsScroll.getStyleClass().add("panel");
+
+        HBox content = new HBox(14, iconSidebar, previewStack, settingsScroll);
+        content.setPadding(new Insets(14, 16, 14, 16));
         HBox.setHgrow(previewStack, Priority.ALWAYS);
         setCenter(content);
     }
 
-    private final VBox settingsPane = new VBox(12);
-
     private void buildSettingsPane() {
-        settingsPane.setPadding(new Insets(16));
-        settingsPane.setPrefWidth(310);
-        settingsPane.setMinWidth(270);
-        settingsPane.setStyle("-fx-background-color: #111621; -fx-background-radius: 14;");
+        VBox background = section(sectionTitle("Arka plan"),
+                mutedLabel("Kenarlardaki düz zemin otomatik silinir. İç zeminleri buradan seç."));
+        for (Button button : List.of(showSvgPreviewButton, clearBackgroundButton)) {
+            button.setMaxWidth(Double.MAX_VALUE);
+            button.getStyleClass().add("secondary");
+        }
+        selectBackgroundButton.setMaxWidth(Double.MAX_VALUE);
+        selectBackgroundButton.getStyleClass().add("primary");
+        Label toleranceLabel = new Label("Renk toleransı");
+        Region toleranceSpacer = new Region();
+        HBox.setHgrow(toleranceSpacer, Priority.ALWAYS);
+        toleranceValue.getStyleClass().add("value-label");
+        HBox toleranceHeader = new HBox(toleranceLabel, toleranceSpacer, toleranceValue);
+        defringeBox.setSelected(true);
+        background.getChildren().addAll(selectBackgroundButton, showSvgPreviewButton,
+                toleranceHeader, toleranceSlider,
+                mutedLabel("Yüksek değer, tıklanan renge daha uzak tonları da siler."),
+                defringeBox,
+                mutedLabel("Silinen zemine karışmış kenar piksellerini temizler; "
+                        + "logonun etrafında ince renkli çerçeve kalmaz."),
+                clearBackgroundButton);
 
-        Label title = sectionTitle("Paket ayarları");
-        Label dimensionsLabel = mutedLabel("SVG tuval ölçüsü");
-        widthField.setPromptText("Genişlik");
-        heightField.setPromptText("Yükseklik");
-        HBox dimensions = new HBox(8, widthField, heightField);
-        widthField.setPrefColumnCount(5);
-        heightField.setPrefColumnCount(5);
-        styleField(widthField);
-        styleField(heightField);
-
-        Label scaleLabel = mutedLabel("İkon ölçeği");
-        styleField(scaleField);
-        scaleField.setPromptText("Örn. 0.85");
-        Label scaleHint = mutedLabel("1.0 = tuvali doldurur · 0.5 = yarı boyut");
-
-        Button applySettings = new Button("Ölçü ve ölçeği uygula");
-        applySettings.setMaxWidth(Double.MAX_VALUE);
-        applySettings.setStyle(secondaryButtonStyle());
-        applySettings.setOnAction(event -> applySettings());
-
-        Separator separator = new Separator();
-        Label colorsTitle = sectionTitle("Vektör ve renk");
+        VBox colors = section(sectionTitle("Vektör ve renk"));
         colorMode.getItems().setAll(
                 new ModeOption("Kaynak renklerini koru", TraceOptions.ColorMode.PRESERVE_SOURCE),
                 new ModeOption("Renk sayısını azalt", TraceOptions.ColorMode.REDUCE_SOURCE),
                 new ModeOption("Özel paletleri kullan", TraceOptions.ColorMode.CUSTOM_PALETTE));
         colorMode.getSelectionModel().selectFirst();
         colorMode.setMaxWidth(Double.MAX_VALUE);
-        colorMode.setStyle("-fx-background-color: #1d2533; -fx-text-fill: #e2e8f0;");
-
-        Label colorCountLabel = mutedLabel("Azami renk sayısı");
         colorCount.setEditable(false);
         colorCount.setMaxWidth(Double.MAX_VALUE);
-        colorCount.setStyle("-fx-background-color: #1d2533;");
-        Label colorsHint = mutedLabel("Yalnızca kaynak renklerini azaltma modunda kullanılır.");
+        colors.getChildren().addAll(colorMode, mutedLabel("Azami renk sayısı"), colorCount,
+                mutedLabel("Yalnızca renk sayısını azaltma modunda kullanılır."), paletteEditor);
 
-        ScrollPane palettesScroll = new ScrollPane(paletteEditor);
-        palettesScroll.setFitToWidth(true);
-        palettesScroll.setPrefViewportHeight(250);
-        palettesScroll.setStyle("-fx-background: transparent; -fx-background-color: transparent;");
-        Label backgroundTitle = sectionTitle("Arka plan");
-        selectBackgroundButton.setMaxWidth(Double.MAX_VALUE);
-        selectBackgroundButton.setStyle(secondaryButtonStyle());
-        showSvgPreviewButton.setMaxWidth(Double.MAX_VALUE);
-        showSvgPreviewButton.setStyle(secondaryButtonStyle());
-        clearBackgroundButton.setMaxWidth(Double.MAX_VALUE);
-        clearBackgroundButton.setStyle(secondaryButtonStyle());
-        settingsPane.getChildren().addAll(
-                title, dimensionsLabel, dimensions, scaleLabel, scaleField, scaleHint, applySettings,
-                separator, colorsTitle, colorMode, colorCountLabel, colorCount, colorsHint,
-                backgroundTitle, selectBackgroundButton, showSvgPreviewButton, clearBackgroundButton,
-                palettesScroll);
-        VBox.setVgrow(palettesScroll, Priority.ALWAYS);
+        widthField.setPromptText("Genişlik");
+        heightField.setPromptText("Yükseklik");
+        widthField.setPrefColumnCount(5);
+        heightField.setPrefColumnCount(5);
+        scaleField.setPromptText("Örn. 0.85");
+        Button applySettings = new Button("Ölçü ve ölçeği uygula");
+        applySettings.setMaxWidth(Double.MAX_VALUE);
+        applySettings.getStyleClass().add("secondary");
+        applySettings.setOnAction(event -> applySettings());
+        VBox canvas = new VBox(8, sectionTitle("Tuval"), mutedLabel("SVG tuval ölçüsü"),
+                new HBox(8, widthField, heightField), mutedLabel("İkon ölçeği"), scaleField,
+                mutedLabel("1.0 = tuvali doldurur · 0.5 = yarı boyut"), applySettings);
+
+        settingsPane.getChildren().setAll(background, colors, canvas);
     }
 
     private void configureControls() {
         selectBackgroundButton.setOnAction(event -> showBackgroundPicker());
         showSvgPreviewButton.setOnAction(event -> showSvgPreview());
         clearBackgroundButton.setOnAction(event -> clearBackgroundSelections());
+        toleranceSlider.valueProperty().addListener((observable, oldValue, newValue) -> {
+            toleranceValue.setText(Integer.toString((int) Math.round(newValue.doubleValue())));
+            if (!toleranceSlider.isValueChanging()) {
+                applyTolerance();
+            }
+        });
+        toleranceSlider.valueChangingProperty().addListener((observable, wasChanging, changing) -> {
+            if (!changing) {
+                applyTolerance();
+            }
+        });
+        defringeBox.selectedProperty().addListener((observable, oldValue, selected) -> {
+            IconAsset icon = iconList.getSelectionModel().getSelectedItem();
+            if (icon != null && !syncingBackgroundControls) {
+                controller.setDefringe(icon, selected);
+                backgroundChanged(icon, selected
+                        ? "Kenar halesi temizleniyor." : "Kenar halesi temizliği kapatıldı.");
+            }
+        });
         colorMode.setOnAction(event -> updateTraceOptions());
         colorCount.valueProperty().addListener((observable, oldValue, newValue) -> {
             if (colorMode.getValue() != null
@@ -209,16 +266,24 @@ public final class IconWorkspace extends BorderPane {
             }
         });
         exportButton.setDisable(true);
-        selectBackgroundButton.setDisable(true);
-        showSvgPreviewButton.setDisable(true);
-        clearBackgroundButton.setDisable(true);
+        updateBackgroundControls(null);
+    }
+
+    private void applyTolerance() {
+        IconAsset icon = iconList.getSelectionModel().getSelectedItem();
+        int tolerance = (int) Math.round(toleranceSlider.getValue());
+        if (icon == null || syncingBackgroundControls
+                || controller.backgroundSelection(icon).tolerance() == tolerance) {
+            return;
+        }
+        controller.setBackgroundTolerance(icon, tolerance);
+        backgroundChanged(icon, "Renk toleransı " + tolerance + " olarak ayarlandı.");
     }
 
     private void buildStatusBar() {
         HBox bar = new HBox(10, progress, status);
         bar.setAlignment(Pos.CENTER_LEFT);
-        bar.setPadding(new Insets(10, 28, 16, 28));
-        progress.setVisible(false);
+        bar.getStyleClass().add("status-bar");
         setBottom(bar);
     }
 
@@ -234,7 +299,7 @@ public final class IconWorkspace extends BorderPane {
 
     private void choosePngs() {
         FileChooser chooser = new FileChooser();
-        chooser.setTitle("PNG veya JPG ikonlarını seç");
+        chooser.setTitle("PNG veya JPG görselleri seç");
         chooser.getExtensionFilters().add(
                 new FileChooser.ExtensionFilter("PNG ve JPG görseller", "*.png", "*.jpg", "*.jpeg"));
         List<File> files = chooser.showOpenMultipleDialog(getWindow());
@@ -250,7 +315,7 @@ public final class IconWorkspace extends BorderPane {
         };
         runTask(task, issues -> {
             icons.setAll(controller.pack().icons());
-            packageCount.setText(icons.size() + (icons.size() == 1 ? " ikon" : " ikon"));
+            packageCount.setText(icons.size() + " ikon");
             if (iconList.getSelectionModel().getSelectedItem() == null && !icons.isEmpty()) {
                 iconList.getSelectionModel().selectFirst();
             }
@@ -355,21 +420,31 @@ public final class IconWorkspace extends BorderPane {
         long request = previewRequests.beginRequest();
         if (icon == null) {
             previewPane.showVariants(List.of());
+            layerList.showLayers(List.of(), Set.of(), (color, hidden) -> { });
             exportButton.setDisable(icons.isEmpty());
             return;
         }
-        Task<List<IconVariant>> task = new Task<>() {
+        Task<IconPreview> task = new Task<>() {
             @Override
-            protected List<IconVariant> call() throws Exception {
-                return controller.preview(icon);
+            protected IconPreview call() throws Exception {
+                return controller.previewWithLayers(icon);
             }
         };
-        runTask(task, variants -> {
+        runTask(task, preview -> {
             if (previewRequests.isCurrent(request)
                     && iconList.getSelectionModel().getSelectedItem() == icon) {
-                previewPane.showVariants(variants);
+                previewPane.showVariants(preview.variants());
+                layerList.showLayers(preview.layers(), controller.hiddenLayerColors(icon),
+                        (color, hidden) -> toggleLayer(icon, color, hidden));
+                status.setText(preview.layers().size() + " katmanlı vektör önizlemesi hazır.");
             }
         }, "Vektör önizlemesi hazırlanıyor…", () -> previewRequests.isCurrent(request));
+    }
+
+    private void toggleLayer(IconAsset icon, String color, boolean hidden) {
+        controller.setLayerHidden(icon, color, hidden);
+        refreshPreview(icon);
+        status.setText(color.toUpperCase() + (hidden ? " katmanı gizlendi." : " katmanı yeniden gösteriliyor."));
     }
 
     private void showBackgroundPicker() {
@@ -398,20 +473,33 @@ public final class IconWorkspace extends BorderPane {
     }
 
     private void loadBackgroundPicker(IconAsset icon) {
-        backgroundPicker.setSource(icon, controller.backgroundRemovalSeeds(icon),
-                controller.eraseStrokes(icon), seed -> {
-            controller.addBackgroundRemovalSeed(icon, seed);
-            loadBackgroundPicker(icon);
-            refreshPreview(icon);
-            updateBackgroundControls(icon);
-            status.setText("Bağlı arka plan bölgesi seçildi.");
+        backgroundPicker.setSource(icon, controller.backgroundSelection(icon), controller.processedSource(icon),
+                seed -> {
+                    controller.addBackgroundRemovalSeed(icon, seed);
+                    backgroundChanged(icon, "Bağlı arka plan bölgesi silindi.");
                 }, stroke -> {
                     controller.addEraseStroke(icon, stroke);
-                    loadBackgroundPicker(icon);
-                    refreshPreview(icon);
-                    updateBackgroundControls(icon);
-                    status.setText("Çizilen alan silindi.");
-        });
+                    backgroundChanged(icon, "Boyanan alan silindi.");
+                }, stroke -> {
+                    controller.addProtectStroke(icon, stroke);
+                    backgroundChanged(icon, "Boyanan alan korunuyor.");
+                });
+    }
+
+    private void backgroundChanged(IconAsset icon, String message) {
+        if (selectingBackground) {
+            loadBackgroundPicker(icon);
+        }
+        refreshPreview(icon);
+        updateBackgroundControls(icon);
+        status.setText(message);
+    }
+
+    private void undoBackgroundEdit() {
+        IconAsset icon = iconList.getSelectionModel().getSelectedItem();
+        if (icon != null && controller.undoBackgroundEdit(icon)) {
+            backgroundChanged(icon, "Son arka plan düzenlemesi geri alındı.");
+        }
     }
 
     private void clearBackgroundSelections() {
@@ -420,21 +508,25 @@ public final class IconWorkspace extends BorderPane {
             return;
         }
         controller.clearBackgroundRemovalSeeds(icon);
-        if (selectingBackground) {
-            loadBackgroundPicker(icon);
-        }
-        refreshPreview(icon);
-        updateBackgroundControls(icon);
-        status.setText("Seçili ikonun arka plan seçimleri temizlendi.");
+        backgroundChanged(icon, "Arka plan seçimleri temizlendi (Ctrl+Z ile geri alınabilir).");
     }
 
     private void updateBackgroundControls(IconAsset icon) {
         boolean hasIcon = icon != null;
-        selectBackgroundButton.setDisable(!hasIcon);
+        BackgroundSelection selection = hasIcon ? controller.backgroundSelection(icon) : BackgroundSelection.EMPTY;
+        selectBackgroundButton.setDisable(!hasIcon || selectingBackground);
         showSvgPreviewButton.setDisable(!selectingBackground);
-        clearBackgroundButton.setDisable(!hasIcon
-                || (controller.backgroundRemovalSeeds(icon).isEmpty()
-                && controller.eraseStrokes(icon).isEmpty()));
+        clearBackgroundButton.setDisable(!selection.hasEdits());
+        undoButton.setDisable(!hasIcon || !controller.canUndoBackgroundEdit(icon));
+        toleranceSlider.setDisable(!hasIcon);
+        defringeBox.setDisable(!hasIcon);
+        syncingBackgroundControls = true;
+        try {
+            toleranceSlider.setValue(selection.tolerance());
+            defringeBox.setSelected(selection.defringe());
+        } finally {
+            syncingBackgroundControls = false;
+        }
     }
 
     private <T> void runTask(Task<T> task, Consumer<T> onSuccess, String busyMessage) {
@@ -459,15 +551,12 @@ public final class IconWorkspace extends BorderPane {
             }
         });
         task.setOnFailed(event -> {
-            if (!completionIsCurrent.getAsBoolean()) {
-                progress.setVisible(false);
-                importButton.setDisable(false);
-                exportButton.setDisable(icons.isEmpty());
-                return;
-            }
             progress.setVisible(false);
             importButton.setDisable(false);
             exportButton.setDisable(icons.isEmpty());
+            if (!completionIsCurrent.getAsBoolean()) {
+                return;
+            }
             Throwable failure = task.getException();
             showAlert(Alert.AlertType.ERROR, "İşlem tamamlanamadı",
                     failure == null || failure.getMessage() == null
@@ -492,31 +581,23 @@ public final class IconWorkspace extends BorderPane {
         return getScene() == null ? null : getScene().getWindow();
     }
 
+    private static VBox section(Label... labels) {
+        VBox section = new VBox(8, labels);
+        section.getStyleClass().add("panel-section");
+        return section;
+    }
+
     private static Label sectionTitle(String value) {
         Label label = new Label(value);
-        label.setStyle("-fx-text-fill: #f1f5f9; -fx-font-size: 14px; -fx-font-weight: 700;");
+        label.getStyleClass().add("section-title");
         return label;
     }
 
     private static Label mutedLabel(String value) {
         Label label = new Label(value);
-        label.setStyle("-fx-text-fill: #8d98aa; -fx-font-size: 11px;");
+        label.getStyleClass().add("muted");
+        label.setWrapText(true);
         return label;
-    }
-
-    private static void styleField(TextField field) {
-        field.setStyle("-fx-background-color: #1d2533; -fx-text-fill: #e5e7eb; "
-                + "-fx-prompt-text-fill: #697386; -fx-background-radius: 7;");
-    }
-
-    private static String primaryButtonStyle() {
-        return "-fx-background-color: #7667f3; -fx-text-fill: white; -fx-background-radius: 8; "
-                + "-fx-padding: 9 14; -fx-font-weight: 700;";
-    }
-
-    private static String secondaryButtonStyle() {
-        return "-fx-background-color: #242d3b; -fx-text-fill: #e5e7eb; -fx-background-radius: 8; "
-                + "-fx-padding: 9 10; -fx-font-size: 11px;";
     }
 
     private record ModeOption(String label, TraceOptions.ColorMode mode) {
