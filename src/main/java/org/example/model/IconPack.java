@@ -78,6 +78,21 @@ public final class IconPack {
         addBackgroundRegion(icon, RegionSeed.at(seed));
     }
 
+    /** Adds several regions as one undoable edit; regions already selected are skipped. */
+    public synchronized void addBackgroundRegions(IconAsset icon, List<RegionSeed> regions) {
+        List<RegionSeed> added = regions.stream()
+                .filter(region -> !backgroundSelection(icon).regions().contains(region)).distinct().toList();
+        if (!added.isEmpty()) {
+            editBackground(icon, selection -> {
+                BackgroundSelection result = selection;
+                for (RegionSeed region : added) {
+                    result = result.withSeed(region);
+                }
+                return result;
+            });
+        }
+    }
+
     public synchronized void addBackgroundRegion(IconAsset icon, RegionSeed region) {
         if (!backgroundSelection(icon).regions().contains(region)) {
             editBackground(icon, selection -> selection.withSeed(region));

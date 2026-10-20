@@ -498,6 +498,74 @@ class IconPackControllerTest {
     }
 
     @Test
+    void aColorRuleRemovesMatchingEdgeRegionsInEveryIconAsOneEditEach(@TempDir Path directory) throws Exception {
+        IconPackController controller = controller();
+        controller.addImages(List.of(framed(directory.resolve("a.png"), new Color(250, 250, 250), Color.RED),
+                framed(directory.resolve("b.png"), new Color(244, 246, 248), Color.BLUE),
+                framed(directory.resolve("c.png"), new Color(20, 120, 40), Color.ORANGE)));
+        List<IconAsset> icons = controller.pack().icons();
+
+        int changed = controller.applyColorRule(0xffffff, 12);
+
+        assertEquals(2, changed);
+        assertEquals(0, controller.processedSource(icons.get(0)).getRGB(0, 0) >>> 24);
+        assertEquals(0, controller.processedSource(icons.get(1)).getRGB(11, 11) >>> 24);
+        assertEquals(255, controller.processedSource(icons.get(0)).getRGB(6, 6) >>> 24);
+        assertTrue(controller.backgroundSelection(icons.get(2)).regions().isEmpty());
+        assertTrue(controller.undoBackgroundEdit(icons.get(0)));
+        assertFalse(controller.canUndoBackgroundEdit(icons.get(0)));
+    }
+
+    @Test
+    void copiesBackgroundAndLayerSettingsToSimilarIcons(@TempDir Path directory) throws Exception {
+        IconPackController controller = controller();
+        controller.addImages(List.of(framed(directory.resolve("a.png"), Color.WHITE, new Color(200, 30, 30)),
+                framed(directory.resolve("b.png"), Color.WHITE, new Color(196, 34, 28))));
+        IconAsset source = controller.pack().icons().get(0);
+        IconAsset target = controller.pack().icons().get(1);
+        controller.setBackgroundTolerance(source, 20);
+        controller.setDefringe(source, false);
+        String red = controller.previewWithLayers(source).layers().stream()
+                .map(org.example.export.SvgLayer::color).filter(color -> !color.equals("#ffffff")).findFirst().orElseThrow();
+        controller.setLayerColor(source, red, "#c8f25c");
+        controller.setLayerName(source, red, "Kalp");
+
+        controller.copySettings(source, List.of(target));
+
+        assertEquals(20, controller.backgroundSelection(target).tolerance());
+        assertFalse(controller.backgroundSelection(target).defringe());
+        String targetRed = controller.previewWithLayers(target).layers().stream()
+                .map(org.example.export.SvgLayer::color).filter(color -> !color.equals("#ffffff")).findFirst().orElseThrow();
+        assertEquals("#c8f25c", controller.layerColors(target).get(targetRed));
+        assertEquals("Kalp", controller.layerNames(target).get(targetRed));
+    }
+
+    @Test
+    void reportsHowFarEachIconHasBeenProcessed(@TempDir Path directory) throws Exception {
+        IconPackController controller = controller();
+        controller.addImages(List.of(writePng(directory.resolve("sun.png"), Color.ORANGE)));
+        IconAsset icon = controller.pack().icons().getFirst();
+        assertEquals(IconStatus.UNTOUCHED, controller.status(icon));
+
+        controller.addBackgroundRemovalSeed(icon, new PixelCoordinate(0, 0));
+        assertEquals(IconStatus.BACKGROUND_SEPARATED, controller.status(icon));
+
+        controller.setLayerHidden(icon, "#ffa500", true);
+        assertEquals(IconStatus.LAYERS_EDITED, controller.status(icon));
+    }
+
+    private static Path framed(Path path, Color background, Color artwork) throws Exception {
+        BufferedImage image = new BufferedImage(12, 12, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < 12; y++) {
+            for (int x = 0; x < 12; x++) {
+                image.setRGB(x, y, (x > 2 && x < 9 && y > 2 && y < 9 ? artwork : background).getRGB());
+            }
+        }
+        ImageIO.write(image, "png", path.toFile());
+        return path;
+    }
+
+    @Test
     void newPackReducesToEightColorsAtTheDetailedLevel() {
         TraceOptions options = controller().pack().traceOptions();
 

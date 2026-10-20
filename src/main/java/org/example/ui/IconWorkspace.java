@@ -77,6 +77,9 @@ public final class IconWorkspace extends BorderPane {
     private final TextField scaleField = new TextField("1.0");
     private final CheckBox mosaicBox = new CheckBox("Boşluksuz (mozaik) çizim");
     private final CheckBox compactBox = new CheckBox("SVG'yi küçült");
+    private final ColorPicker ruleColor = new ColorPicker(javafx.scene.paint.Color.WHITE);
+    private final Button applyRuleButton = new Button("Tüm pakette sil");
+    private final Button copySettingsButton = new Button("Ayarları diğer görsellere kopyala");
     private final ComboBox<String> decimalsBox = new ComboBox<>();
     private final Button importButton = new Button("PNG/JPG ekle");
     private final Button undoButton = new Button("Geri al");
@@ -220,7 +223,8 @@ public final class IconWorkspace extends BorderPane {
                 } else {
                     thumbnail.setImage(thumbnails.computeIfAbsent(item,
                             icon -> FxImages.toFxImage(icon.image())));
-                    setText(item.name() + "\n" + item.image().getWidth() + " × " + item.image().getHeight());
+                    setText(item.name() + "\n" + item.image().getWidth() + " × " + item.image().getHeight()
+                            + " · " + controller.status(item).label());
                     setGraphic(thumbnail);
                     setGraphicTextGap(10);
                 }
@@ -377,7 +381,22 @@ public final class IconWorkspace extends BorderPane {
                 mutedLabel("Ortak öznitelikleri katmana taşır, bitişik yolları birleştirir ve koordinatları "
                         + "yuvarlar; görünüş değişmez, dosya genellikle yarı yarıya küçülür."));
 
-        settingsPane.getChildren().setAll(background, colors, canvas);
+        ruleColor.setMaxWidth(Double.MAX_VALUE);
+        ruleColor.setAccessibleText("Kural rengi");
+        for (Button button : List.of(applyRuleButton, copySettingsButton)) {
+            button.setMaxWidth(Double.MAX_VALUE);
+            button.getStyleClass().add("secondary");
+        }
+        applyRuleButton.setOnAction(event -> applyColorRule());
+        copySettingsButton.setOnAction(event -> copySettingsToOthers());
+        VBox batch = section(sectionTitle("Toplu işlem"),
+                mutedLabel("Benzer görsellerden oluşan paketlerde ayarları tek tek tekrarlamak gerekmez."));
+        batch.getChildren().addAll(new Label("Renk kuralı"), ruleColor, applyRuleButton,
+                mutedLabel("Kenara değen ve bu renge yukarıdaki toleransla yakın bölgeler her görselde silinir."),
+                copySettingsButton,
+                mutedLabel("Seçili görselin toleransı, hale temizliği, konu ayırma yöntemi ve katman "
+                        + "düzenlemeleri (gizleme, renk, ad, sıra) diğer görsellerdeki en yakın katmana aktarılır."));
+        settingsPane.getChildren().setAll(background, colors, batch, canvas);
     }
 
     private void configureControls() {
@@ -879,6 +898,7 @@ public final class IconWorkspace extends BorderPane {
                 layerList.showLayers(preview.layers(), controller.hiddenLayerColors(icon),
                         controller.layerColors(icon), controller.layerNames(icon), layerActions(icon));
                 status.setText(preview.layers().size() + " katmanlı vektör önizlemesi hazır.");
+                iconList.refresh();
                 controller.colorReductionAdvice(preview.layers().size()).ifPresentOrElse(
                         advice -> previewPane.showAdvice(advice, "8 renge indir", this::applyRecommendedColors),
                         previewPane::hideAdvice);
@@ -917,6 +937,52 @@ public final class IconWorkspace extends BorderPane {
                 layerEdited(icon, color.toUpperCase() + " katmanı " + into.toUpperCase() + " ile birleştirildi.");
             }
         };
+    }
+
+    private void applyColorRule() {
+        javafx.scene.paint.Color color = ruleColor.getValue();
+        int rgb = (int) Math.round(color.getRed() * 255) << 16 | (int) Math.round(color.getGreen() * 255) << 8
+                | (int) Math.round(color.getBlue() * 255);
+        int tolerance = (int) Math.round(toleranceSlider.getValue());
+        int changed = controller.applyColorRule(rgb, tolerance);
+        IconAsset icon = iconList.getSelectionModel().getSelectedItem();
+        String message = changed + " görselde kenardaki " + String.format("#%06X", rgb)
+                + " tonları silindi (ΔE ≤ " + tolerance + "). Her görsel Ctrl+Z ile ayrı geri alınabilir.";
+        if (changed == 0) {
+            status.setText("Bu renge yakın bir kenar bölgesi bulunamadı.");
+        } else if (icon != null) {
+            backgroundChanged(icon, message);
+        } else {
+            markDirty();
+            status.setText(message);
+        }
+        iconList.refresh();
+    }
+
+    private void copySettingsToOthers() {
+        IconAsset source = iconList.getSelectionModel().getSelectedItem();
+        if (source == null || icons.size() < 2) {
+            return;
+        }
+        List<IconAsset> targets = icons.stream().filter(icon -> icon != source).toList();
+        SegmentationModel maskModel = controller.backgroundSelection(source).keepSubjectOnly()
+                ? maskModels.get(source) : null;
+        Task<Void> task = new Task<>() {
+            @Override
+            protected Void call() throws Exception {
+                controller.copySettings(source, targets);
+                return null;
+            }
+        };
+        runTask(task, ignored -> {
+            markDirty();
+            iconList.refresh();
+            if (maskModel != null) {
+                detectSubject(targets, maskModel, source);
+            } else {
+                backgroundChanged(source, "Ayarlar " + targets.size() + " görsele kopyalandı.");
+            }
+        }, "Ayarlar diğer görsellere kopyalanıyor…");
     }
 
     private void layerEdited(IconAsset icon, String message) {
@@ -1114,6 +1180,8 @@ public final class IconWorkspace extends BorderPane {
         defringeBox.setDisable(!hasIcon);
         detectSubjectButton.setDisable(!hasIcon);
         detectAllButton.setDisable(icons.size() < 2);
+        copySettingsButton.setDisable(!hasIcon || icons.size() < 2);
+        applyRuleButton.setDisable(icons.isEmpty());
         keepSubjectBox.setDisable(!hasIcon || !controller.hasSubjectMask(icon));
         syncingBackgroundControls = true;
         try {

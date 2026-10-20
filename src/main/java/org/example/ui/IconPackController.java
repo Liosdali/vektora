@@ -37,6 +37,8 @@ public final class IconPackController {
     private static final double MIN_SUGGESTED_SHARE = 0.01;
     /** Beyond this many layers a source-color trace is usually anti-aliasing noise, not design. */
     public static final int MAX_COMFORTABLE_LAYERS = 64;
+    /** Traced layers of similar images this close (ΔE) count as the same layer when copying edits. */
+    private static final double SAME_LAYER_DISTANCE = 10;
 
     private final IconPack pack;
     private final SvgVectorizer vectorizer;
@@ -202,6 +204,96 @@ public final class IconPackController {
     public Rectangle subjectFrame(IconAsset icon) {
         requireOwnedIcon(icon);
         return pack.subjectFrame(icon);
+    }
+
+    /**
+     * Removes, in every icon, the regions along the image edge close to {@code rgb}; each icon
+     * gets one undoable edit. Returns how many icons changed.
+     */
+    public int applyColorRule(int rgb, int tolerance) {
+        if (tolerance < 0 || tolerance > BackgroundSelection.MAX_TOLERANCE) {
+            throw new IllegalArgumentException("Tolerance is out of range");
+        }
+        int changed = 0;
+        for (IconAsset icon : pack.icons()) {
+            List<RegionSeed> regions = BackgroundRegionProcessor.edgeRegionSeeds(icon.image(), rgb, tolerance)
+                    .stream().map(RegionSeed::at).toList();
+            if (!regions.isEmpty()) {
+                pack.addBackgroundRegions(icon, regions);
+                changed++;
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * Gives the targets the source's tolerance and halo cleanup, and its layer edits (hidden,
+     * recolored, named, ordered) on each target's closest traced layer. Traces every icon, so call
+     * it off the UI thread.
+     */
+    public void copySettings(IconAsset source, List<IconAsset> targets) throws VectorizationException, IOException {
+        requireOwnedIcon(source);
+        BackgroundSelection settings = pack.backgroundSelection(source);
+        List<String> sourceLayers = tracedLayerColors(source);
+        for (IconAsset target : targets) {
+            requireOwnedIcon(target);
+            if (target == source) {
+                continue;
+            }
+            pack.setBackgroundTolerance(target, settings.tolerance());
+            pack.setDefringe(target, settings.defringe());
+            Map<String, String> sameLayer = matchLayers(sourceLayers, tracedLayerColors(target));
+            for (String hidden : pack.hiddenLayerColors(source)) {
+                if (sameLayer.containsKey(hidden)) {
+                    pack.setLayerHidden(target, sameLayer.get(hidden), true);
+                }
+            }
+            pack.layerColors(source).forEach((color, replacement) -> {
+                if (sameLayer.containsKey(color)) {
+                    // A merge points at a traced color; follow it to the target's version of that layer.
+                    pack.setLayerColor(target, sameLayer.get(color), sameLayer.getOrDefault(replacement, replacement));
+                }
+            });
+            pack.layerNames(source).forEach((color, name) -> {
+                if (sameLayer.containsKey(color)) {
+                    pack.setLayerName(target, sameLayer.get(color), name);
+                }
+            });
+            List<String> order = pack.layerOrder(source).stream()
+                    .filter(sameLayer::containsKey).map(sameLayer::get).distinct().toList();
+            if (!order.isEmpty()) {
+                pack.setLayerOrder(target, order);
+            }
+        }
+    }
+
+    public IconStatus status(IconAsset icon) {
+        requireOwnedIcon(icon);
+        boolean layersEdited = !pack.hiddenLayerColors(icon).isEmpty() || !pack.layerColors(icon).isEmpty()
+                || !pack.layerNames(icon).isEmpty() || !pack.layerOrder(icon).isEmpty();
+        if (layersEdited) {
+            return IconStatus.LAYERS_EDITED;
+        }
+        return pack.backgroundSelection(icon).hasEdits() ? IconStatus.BACKGROUND_SEPARATED : IconStatus.UNTOUCHED;
+    }
+
+    private List<String> tracedLayerColors(IconAsset icon) throws VectorizationException, IOException {
+        List<IconVariant> traced = traceVariants(icon, pack.backgroundSelection(icon));
+        return traced.isEmpty() ? List.of()
+                : SvgLayers.layers(traced.getFirst().svg()).stream().map(SvgLayer::color).toList();
+    }
+
+    /** Each source layer's closest target layer, when one is close enough to be the same. */
+    private static Map<String, String> matchLayers(List<String> source, List<String> target) {
+        Map<String, String> matches = new HashMap<>();
+        for (String color : source) {
+            int rgb = Integer.parseInt(color.substring(1), 16);
+            target.stream()
+                    .min(Comparator.comparingDouble(other -> LabColor.deltaE(rgb, Integer.parseInt(other.substring(1), 16))))
+                    .filter(other -> LabColor.deltaE(rgb, Integer.parseInt(other.substring(1), 16)) <= SAME_LAYER_DISTANCE)
+                    .ifPresent(other -> matches.put(color, other));
+        }
+        return matches;
     }
 
     public boolean hasSubjectMask(IconAsset icon) {

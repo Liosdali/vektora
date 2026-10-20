@@ -470,6 +470,38 @@ public final class BackgroundRegionProcessor {
         return List.copyOf(regions.subList(0, Math.min(limit, regions.size())));
     }
 
+    /**
+     * One seed for every separate region along the image edge whose color is within
+     * {@code tolerance} ΔE of {@code rgb}, so a color rule can remove the same backdrop from many
+     * images. Each seed's region grows as a click on it would.
+     */
+    public static List<PixelCoordinate> edgeRegionSeeds(BufferedImage image, int rgb, int tolerance) {
+        Objects.requireNonNull(image, "Image is required");
+        int width = image.getWidth();
+        int height = image.getHeight();
+        double[] ruleLab = LabColor.lab(rgb);
+        boolean[] claimed = new boolean[width * height];
+        List<PixelCoordinate> border = new ArrayList<>();
+        for (int x = 0; x < width; x++) {
+            border.add(new PixelCoordinate(x, 0));
+            border.add(new PixelCoordinate(x, height - 1));
+        }
+        for (int y = 1; y < height - 1; y++) {
+            border.add(new PixelCoordinate(0, y));
+            border.add(new PixelCoordinate(width - 1, y));
+        }
+        List<PixelCoordinate> seeds = new ArrayList<>();
+        for (PixelCoordinate point : border) {
+            int pixel = image.getRGB(point.x(), point.y());
+            if (claimed[point.y() * width + point.x()] || !matchesBackground(pixel, ruleLab, false, tolerance)) {
+                continue;
+            }
+            seeds.add(point);
+            collectConnectedRegion(image, point.x(), point.y(), pixel, claimed, false, tolerance);
+        }
+        return List.copyOf(seeds);
+    }
+
     private static void validateSeed(PixelCoordinate seed, int width, int height) {
         if (seed.x() < 0 || seed.y() < 0 || seed.x() >= width || seed.y() >= height) {
             throw new IllegalArgumentException("Background seed must be inside the source image");
