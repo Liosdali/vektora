@@ -502,6 +502,17 @@ public final class BackgroundRegionProcessor {
         return List.copyOf(seeds);
     }
 
+    /** The connected pixels a plain click on {@code seed} removes, row by row. */
+    public static boolean[] regionPixels(BufferedImage image, PixelCoordinate seed, int tolerance) {
+        validateSeed(seed, image.getWidth(), image.getHeight());
+        boolean[] region = new boolean[image.getWidth() * image.getHeight()];
+        int pixel = image.getRGB(seed.x(), seed.y());
+        if ((pixel >>> 24) != 0) {
+            collectConnectedRegion(image, seed.x(), seed.y(), pixel, region, false, tolerance);
+        }
+        return region;
+    }
+
     private static void validateSeed(PixelCoordinate seed, int width, int height) {
         if (seed.x() < 0 || seed.y() < 0 || seed.x() >= width || seed.y() >= height) {
             throw new IllegalArgumentException("Background seed must be inside the source image");

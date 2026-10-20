@@ -166,6 +166,19 @@ class BackgroundRegionProcessorTest {
     }
 
     @Test
+    void reportsThePixelsAClickWouldRemove() {
+        BufferedImage source = image(5, 1);
+        fill(source, 0, 0, 2, 1, Color.WHITE);
+        fill(source, 2, 0, 1, 1, Color.RED);
+        fill(source, 3, 0, 2, 1, Color.WHITE);
+
+        boolean[] region = BackgroundRegionProcessor.regionPixels(source, new PixelCoordinate(0, 0), 12);
+
+        assertEquals(List.of(true, true, false, false, false),
+                List.of(region[0], region[1], region[2], region[3], region[4]));
+    }
+
+    @Test
     void higherToleranceRemovesColorsFurtherFromTheSeed() {
         BufferedImage source = image(3, 1);
         source.setRGB(0, 0, new Color(100, 100, 100).getRGB());

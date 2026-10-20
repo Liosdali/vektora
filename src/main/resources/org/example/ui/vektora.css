@@ -9,7 +9,9 @@
     -vk-text: #ecedef;
     -vk-text-soft: #c9cbd1;
     -vk-muted: #9a9ea8;
+    -vk-dim: #8a8e98;
     -vk-accent: #c8f25c;
+    -vk-accent-text: #c8f25c;
     -vk-on-accent: #0f1013;
 
     -fx-base: #1e2025;
@@ -90,7 +92,7 @@
 .value-label {
     -fx-font-family: "Consolas";
     -fx-font-size: 12px;
-    -fx-text-fill: -vk-accent;
+    -fx-text-fill: -vk-accent-text;
 }
 
 .mono {
@@ -185,7 +187,7 @@
     -fx-border-color: -vk-border;
     -fx-border-radius: 7;
     -fx-text-fill: -vk-text;
-    -fx-prompt-text-fill: #6e727c;
+    -fx-prompt-text-fill: -vk-dim;
 }
 
 .slider .track {
@@ -258,7 +260,7 @@
 }
 
 .layer-row.hidden-layer .label {
-    -fx-text-fill: #6e727c;
+    -fx-text-fill: -vk-dim;
 }
 
 .layer-swatch {
@@ -274,13 +276,13 @@
 .eye-toggle {
     -fx-background-color: transparent;
     -fx-padding: 2 8 2 8;
-    -fx-text-fill: -vk-accent;
+    -fx-text-fill: -vk-accent-text;
     -fx-font-size: 11px;
     -fx-font-weight: 700;
 }
 
 .eye-toggle:selected {
-    -fx-text-fill: #6e727c;
+    -fx-text-fill: -vk-dim;
 }
 
 /* Önizleme ve seçim yüzeyi */
@@ -324,7 +326,7 @@
 
 .link-button {
     -fx-background-color: transparent;
-    -fx-text-fill: -vk-accent;
+    -fx-text-fill: -vk-accent-text;
     -fx-font-size: 11px;
     -fx-padding: 2 4 2 4;
     -fx-cursor: hand;
@@ -403,4 +405,43 @@
 .layer-menu > .arrow-button > .arrow {
     -fx-padding: 0;
     -fx-shape: null;
+}
+
+/* Açık tema: aynı belirteçler, açık zemin. Önizleme ve seçim tuvali koyu kalır. */
+.root.light {
+    -vk-bg: #f4f5f7;
+    -vk-panel: #ffffff;
+    -vk-raised: #f0f1f4;
+    -vk-hover: #e7e9ee;
+    -vk-border: #dcdfe5;
+    -vk-border-strong: #c4c8d0;
+    -vk-text: #16181d;
+    -vk-text-soft: #2f333b;
+    -vk-muted: #565b66;
+    -vk-dim: #5f6470;
+    -vk-accent: #c8f25c;
+    -vk-accent-text: #3f6212;
+    -vk-on-accent: #0f1013;
+
+    -fx-base: #f0f1f4;
+    -fx-background: #f4f5f7;
+    -fx-control-inner-background: #ffffff;
+    -fx-control-inner-background-alt: #f7f8fa;
+    -fx-focus-color: #4d7c0f;
+    -fx-faint-focus-color: #4d7c0f22;
+    -fx-selection-bar: #e3f0bf;
+    -fx-selection-bar-non-focused: #e7e9ee;
+}
+
+.root.light .advice-strip {
+    -fx-background-color: #fef9c3;
+    -fx-border-color: #ca8a04;
+}
+
+.root.light .advice-strip .label {
+    -fx-text-fill: #713f12;
+}
+
+.root.light .guide-card {
+    -fx-effect: dropshadow(gaussian, #0f101333, 24, 0, 0, 8);
 }

@@ -11,6 +11,8 @@ import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
+import javafx.scene.Cursor;
+import javafx.scene.input.KeyCode;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.FlowPane;
@@ -23,6 +25,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.shape.StrokeLineCap;
 import javafx.scene.shape.StrokeLineJoin;
 import org.example.model.IconAsset;
+import org.example.vector.BackgroundRegionProcessor;
 import org.example.vector.BackgroundSelection;
 import org.example.vector.EraseStroke;
 import org.example.vector.PixelCoordinate;
@@ -44,6 +47,7 @@ public final class BackgroundRegionPickerPane extends BorderPane {
     private static final Color ACCENT = Color.web("#c8f25c");
     private static final Color PROTECT = Color.web("#38bdf8");
     private static final int REMOVED_OVERLAY = 0xb4ef4444;
+    private static final int SUGGESTION_OVERLAY = 0x99facc15;
     private static final double MAX_ZOOM = 16;
 
     private final Canvas canvas = new Canvas();
@@ -71,6 +75,13 @@ public final class BackgroundRegionPickerPane extends BorderPane {
     private Consumer<EraseStroke> onProtectDrawn = ignored -> { };
     private Consumer<Rectangle> onFrameDrawn = ignored -> { };
     private Rectangle frame;
+    private BufferedImage processedImage;
+    private Image suggestionHighlight;
+    private ToggleButton lastBrush;
+    private boolean panKeyDown;
+    private boolean panning;
+    private double hoverX = Double.NaN;
+    private double hoverY = Double.NaN;
     private PixelCoordinate frameStart;
     private PixelCoordinate frameEnd;
     private double imageX;
@@ -92,7 +103,17 @@ public final class BackgroundRegionPickerPane extends BorderPane {
 
         HBox tools = segmented(toolGroup, regionTool, eraseTool, protectTool, frameTool);
         frameTool.setTooltip(new Tooltip("Modelsiz ayırma (GrabCut) çerçevenin dışını arka plan sayar"));
-        toolGroup.selectedToggleProperty().addListener((observable, previous, selected) -> updateHint());
+        lastBrush = eraseTool;
+        toolGroup.selectedToggleProperty().addListener((observable, previous, selected) -> {
+            if (selected == eraseTool || selected == protectTool) {
+                lastBrush = (ToggleButton) selected;
+            }
+            updateHint();
+            draw();
+        });
+        regionTool.setTooltip(new Tooltip("Bölge seç (W)"));
+        eraseTool.setTooltip(new Tooltip("Fırçayla sil (E) · B: son fırça"));
+        protectTool.setTooltip(new Tooltip("Fırçayla koru (P) · B: son fırça"));
         HBox views = segmented(viewGroup, maskView, resultView);
         viewGroup.selectedToggleProperty().addListener((observable, previous, selected) -> draw());
 
@@ -162,15 +183,18 @@ public final class BackgroundRegionPickerPane extends BorderPane {
 
     private void configureMouse() {
         canvas.setOnMouseClicked(event -> {
-            if (event.getButton() == MouseButton.PRIMARY && regionTool.isSelected()
+            if (event.getButton() == MouseButton.PRIMARY && regionTool.isSelected() && !panKeyDown
                     && event.isStillSincePress()) {
                 coordinateAt(event.getX(), event.getY()).ifPresent(point -> onSeedSelected.accept(
                         new RegionSeed(point, followGradient.isSelected(), contiguous.isSelected())));
             }
         });
+        canvas.setOnMouseMoved(event -> hover(event.getX(), event.getY()));
+        canvas.setOnMouseExited(event -> hover(Double.NaN, Double.NaN));
         canvas.setOnMousePressed(event -> {
             canvas.requestFocus();
-            if (event.getButton() != MouseButton.PRIMARY) {
+            panning = event.getButton() != MouseButton.PRIMARY || panKeyDown;
+            if (panning) {
                 panStartX = event.getX() - panX;
                 panStartY = event.getY() - panY;
             } else if (isBrushTool()) {
@@ -184,7 +208,9 @@ public final class BackgroundRegionPickerPane extends BorderPane {
             }
         });
         canvas.setOnMouseDragged(event -> {
-            if (event.getButton() != MouseButton.PRIMARY) {
+            hoverX = event.getX();
+            hoverY = event.getY();
+            if (panning) {
                 panX = event.getX() - panStartX;
                 panY = event.getY() - panStartY;
                 draw();
@@ -201,6 +227,10 @@ public final class BackgroundRegionPickerPane extends BorderPane {
             }
         });
         canvas.setOnMouseReleased(event -> {
+            if (panning) {
+                panning = false;
+                return;
+            }
             if (event.getButton() == MouseButton.PRIMARY && isBrushTool() && !activeStroke.isEmpty()) {
                 EraseStroke stroke = new EraseStroke(activeStroke, brushRadius());
                 activeStroke.clear();
@@ -252,6 +282,40 @@ public final class BackgroundRegionPickerPane extends BorderPane {
         return new Rectangle(left, top, Math.abs(first.x() - second.x()) + 1, Math.abs(first.y() - second.y()) + 1);
     }
 
+    /**
+     * Tool keys: W region, E erase, P protect, B back to the last brush, F subject frame.
+     * Returns whether the key picked a tool.
+     */
+    boolean handleShortcut(KeyCode code) {
+        ToggleButton tool = switch (code) {
+            case W -> regionTool;
+            case E -> eraseTool;
+            case P -> protectTool;
+            case B -> lastBrush;
+            case F -> frameTool;
+            default -> null;
+        };
+        if (tool == null) {
+            return false;
+        }
+        tool.setSelected(true);
+        return true;
+    }
+
+    /** While the space bar is held, dragging with the main button moves the image. */
+    void setPanKeyDown(boolean down) {
+        panKeyDown = down;
+        canvas.setCursor(down ? Cursor.OPEN_HAND : Cursor.DEFAULT);
+    }
+
+    private void hover(double x, double y) {
+        hoverX = x;
+        hoverY = y;
+        if (isBrushTool()) {
+            draw();
+        }
+    }
+
     private boolean isBrushTool() {
         return eraseTool.isSelected() || protectTool.isSelected();
     }
@@ -259,7 +323,7 @@ public final class BackgroundRegionPickerPane extends BorderPane {
     private void updateHint() {
         hint.setText(regionTool.isSelected()
                 ? "Silmek istediğin renk alanına tıkla; kırmızı alanlar silinecek. "
-                        + "Tekerlek: yakınlaştır · sağ tık sürükle: kaydır."
+                        + "Tekerlek: yakınlaştır · sağ tık ya da boşluk + sürükle: kaydır."
                 : eraseTool.isSelected()
                 ? "Silinecek kısmı boya; boyadığın alan renginden bağımsız olarak saydam yapılır."
                 : frameTool.isSelected()
@@ -317,6 +381,8 @@ public final class BackgroundRegionPickerPane extends BorderPane {
         sourceImage = FxImages.toFxImage(icon.image());
         resultImage = FxImages.toFxImage(processed);
         removedOverlay = removedOverlay(icon.image(), processed);
+        processedImage = processed;
+        suggestionHighlight = null;
         showSuggestions(Objects.requireNonNull(suggestions, "Suggestions are required"));
         draw();
     }
@@ -341,8 +407,27 @@ public final class BackgroundRegionPickerPane extends BorderPane {
                     + suggestion.pixelCount() + " piksel)"));
             chip.setAccessibleText("Bölgeyi sil: " + color + ", görünür alanın yüzde " + percent);
             chip.setOnAction(event -> onSeedSelected.accept(RegionSeed.at(suggestion.seed())));
+            chip.setOnMouseEntered(event -> highlight(suggestion));
+            chip.setOnMouseExited(event -> {
+                suggestionHighlight = null;
+                draw();
+            });
             suggestionChips.getChildren().add(chip);
         }
+    }
+
+    /** Shows in yellow the area a suggested region's chip would remove. */
+    private void highlight(RegionSuggestion suggestion) {
+        if (processedImage == null) {
+            return;
+        }
+        boolean[] region = BackgroundRegionProcessor.regionPixels(processedImage, suggestion.seed(), selection.tolerance());
+        int[] overlay = new int[region.length];
+        for (int index = 0; index < region.length; index++) {
+            overlay[index] = region[index] ? SUGGESTION_OVERLAY : 0;
+        }
+        suggestionHighlight = FxImages.toFxImage(overlay, processedImage.getWidth(), processedImage.getHeight());
+        draw();
     }
 
     static Optional<PixelCoordinate> sourceCoordinate(
@@ -404,6 +489,9 @@ public final class BackgroundRegionPickerPane extends BorderPane {
             return;
         }
         graphics.drawImage(removedOverlay, imageX, imageY, displayedWidth, displayedHeight);
+        if (suggestionHighlight != null) {
+            graphics.drawImage(suggestionHighlight, imageX, imageY, displayedWidth, displayedHeight);
+        }
 
         double sx = displayedWidth / sourceImage.getWidth();
         double sy = displayedHeight / sourceImage.getHeight();
@@ -425,6 +513,16 @@ public final class BackgroundRegionPickerPane extends BorderPane {
             graphics.strokeRect(imageX + shownFrame.x * sx, imageY + shownFrame.y * sy,
                     shownFrame.width * sx, shownFrame.height * sy);
             graphics.setLineDashes();
+        }
+
+        if (isBrushTool() && !Double.isNaN(hoverX) && !panKeyDown) {
+            // The brush outline, as large as the area a stroke will cover.
+            double brush = (brushRadius() + 0.5) * Math.min(sx, sy);
+            graphics.setLineWidth(1.5);
+            graphics.setStroke(Color.WHITE.deriveColor(0, 1, 1, 0.85));
+            graphics.strokeOval(hoverX - brush, hoverY - brush, brush * 2, brush * 2);
+            graphics.setStroke(SURFACE.deriveColor(0, 1, 1, 0.6));
+            graphics.strokeOval(hoverX - brush - 1.5, hoverY - brush - 1.5, brush * 2 + 3, brush * 2 + 3);
         }
 
         double radius = Math.max(4, Math.min(9, scale * 2));

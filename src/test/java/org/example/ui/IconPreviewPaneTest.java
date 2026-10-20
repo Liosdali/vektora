@@ -30,4 +30,13 @@ class IconPreviewPaneTest {
         assertTrue(document.contains("value=\"30\""));
         assertTrue(document.contains("show(30);"));
     }
+
+    @Test
+    void previewsZoomWithTheWheelAndResetOnDoubleClick() {
+        String document = IconPreviewPane.previewDocument("<svg id=\"vector\"></svg>", "<svg id=\"original\"></svg>", 50);
+
+        assertTrue(document.contains("onwheel"));
+        assertTrue(document.contains("ondblclick"));
+        assertTrue(document.contains("function zoomAt("));
+    }
 }

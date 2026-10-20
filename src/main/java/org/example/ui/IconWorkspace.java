@@ -17,6 +17,7 @@ import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.input.TransferMode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
@@ -112,6 +113,8 @@ public final class IconWorkspace extends BorderPane {
     private final VBox settingsPane = new VBox(14);
     private final FirstRunGuide firstRunGuide = FirstRunGuide.forCurrentUser();
     private final RecentProjects recentProjects = RecentProjects.forCurrentUser();
+    private final ThemeChoice themeChoice = ThemeChoice.forCurrentUser();
+    private final ToggleButton themeButton = new ToggleButton("Açık tema");
     private final MenuButton projectMenu = new MenuButton("Proje");
     private Path projectFile;
     private boolean dirty;
@@ -155,6 +158,23 @@ public final class IconWorkspace extends BorderPane {
             scene.getAccelerators().put(PASTE, () -> paste(scene));
             scene.getAccelerators().put(SAVE, () -> saveProject(false));
             scene.getAccelerators().put(OPEN, this::openProject);
+            scene.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+                if (!selectingBackground || event.isShortcutDown() || event.isAltDown()
+                        || scene.getFocusOwner() instanceof TextInputControl) {
+                    return;
+                }
+                if (event.getCode() == KeyCode.SPACE) {
+                    backgroundPicker.setPanKeyDown(true);
+                    event.consume();
+                } else if (backgroundPicker.handleShortcut(event.getCode())) {
+                    event.consume();
+                }
+            });
+            scene.addEventFilter(KeyEvent.KEY_RELEASED, event -> {
+                if (event.getCode() == KeyCode.SPACE) {
+                    backgroundPicker.setPanKeyDown(false);
+                }
+            });
             scene.windowProperty().addListener((observable, previous, window) -> {
                 if (window != null) {
                     window.setOnCloseRequest(event -> {
@@ -192,10 +212,19 @@ public final class IconWorkspace extends BorderPane {
         importButton.setOnAction(event -> choosePngs());
         configureExportMenu();
         exportButton.getStyleClass().add("primary");
+        themeButton.getStyleClass().add("secondary");
+        themeButton.setTooltip(new Tooltip("Açık ve koyu tema arasında geç; önizleme tuvali koyu kalır"));
+        themeButton.setSelected(themeChoice.light());
+        themeButton.selectedProperty().addListener((observable, previous, light) -> {
+            themeChoice.setLight(light);
+            applyTheme();
+        });
+        applyTheme();
         projectMenu.getStyleClass().add("secondary");
         projectMenu.setOnShowing(event -> configureProjectMenu());
         configureProjectMenu();
-        HBox actions = new HBox(10, packageCount, undoButton, redoButton, projectMenu, importButton, exportButton);
+        HBox actions = new HBox(10, packageCount, themeButton, undoButton, redoButton, projectMenu, importButton,
+                exportButton);
         actions.setAlignment(Pos.CENTER_RIGHT);
         HBox header = new HBox(16, brand, spacer, actions);
         header.setAlignment(Pos.CENTER_LEFT);
@@ -500,6 +529,13 @@ public final class IconWorkspace extends BorderPane {
         icons.setOnAction(event -> export(ExportFormat.ICON_SET));
         exportButton.getItems().setAll(individual, sprite, zip, new SeparatorMenuItem(), layers,
                 new SeparatorMenuItem(), png, icons);
+    }
+
+    private void applyTheme() {
+        getStyleClass().remove("light");
+        if (themeButton.isSelected()) {
+            getStyleClass().add("light");
+        }
     }
 
     private void configureProjectMenu() {

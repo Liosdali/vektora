@@ -25,7 +25,8 @@ public final class IconPreviewPane extends BorderPane {
     public IconPreviewPane() {
         getStyleClass().add("canvas-panel");
         heading.getStyleClass().add("canvas-title");
-        Label hint = new Label("Soldaki kaynak, sağdaki SVG · ayırıcıyı sürükle · dama deseni saydam alanları gösterir");
+        Label hint = new Label("Soldaki kaynak, sağdaki SVG · ayırıcıyı sürükle · tekerlek: yakınlaştır · sağ tık sürükle: "
+                + "kaydır · çift tık: sığdır");
         hint.getStyleClass().add("muted");
         adviceText.setWrapText(true);
         adviceAction.getStyleClass().add("secondary");
@@ -153,7 +154,8 @@ public final class IconPreviewPane extends BorderPane {
                   background-image:linear-gradient(45deg,#24262b 25%%,transparent 25%%,transparent 75%%,#24262b 75%%),
                     linear-gradient(45deg,#24262b 25%%,transparent 25%%,transparent 75%%,#24262b 75%%);
                   background-size:20px 20px;background-position:0 0,10px 10px}
-                .layer{position:absolute;top:0;left:0;width:100%%;height:100%%}
+                .layer{position:absolute;top:0;left:0;width:100%%;height:100%%;overflow:hidden}
+                .zoom{width:100%%;height:100%%;transform-origin:0 0}
                 .layer svg{width:100%%;height:100%%}
                 #handle{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:#c8f25c}
                 .tag{position:absolute;top:8px;padding:3px 7px;border-radius:5px;background:#0f1013;
@@ -165,8 +167,8 @@ public final class IconPreviewPane extends BorderPane {
                 input{accent-color:#c8f25c;width:180px}
                 </style></head><body>
                 <div id="stage">
-                  <div class="layer">%s</div>
-                  <div class="layer" id="source">%s</div>
+                  <div class="layer"><div class="zoom">%s</div></div>
+                  <div class="layer" id="source"><div class="zoom">%s</div></div>
                   <div id="handle"></div>
                   <span class="tag" style="left:8px">KAYNAK</span>
                   <span class="tag" style="right:8px;color:#c8f25c">SVG</span>
@@ -192,9 +194,36 @@ public final class IconPreviewPane extends BorderPane {
                   var box=stage.getBoundingClientRect();
                   show(Math.max(0,Math.min(100,Math.round((event.clientX-box.left)*100/box.width))));
                 }
-                stage.onmousedown=function(event){dragging=true;follow(event);};
-                document.onmousemove=function(event){if(dragging){follow(event);}};
-                document.onmouseup=function(){dragging=false;};
+                var zoom=1,offsetX=0,offsetY=0,panning=null;
+                function applyZoom(){
+                  var views=document.getElementsByClassName('zoom');
+                  for(var i=0;i<views.length;i++){
+                    views[i].style.transform='translate('+offsetX+'px,'+offsetY+'px) scale('+zoom+')';
+                  }
+                }
+                function zoomAt(x,y,factor){
+                  var next=Math.max(1,Math.min(16,zoom*factor));
+                  offsetX=x-(x-offsetX)*next/zoom;
+                  offsetY=y-(y-offsetY)*next/zoom;
+                  zoom=next;
+                  if(zoom==1){offsetX=0;offsetY=0;}
+                  applyZoom();
+                }
+                stage.onwheel=function(event){
+                  event.preventDefault();
+                  var box=stage.getBoundingClientRect();
+                  zoomAt(event.clientX-box.left,event.clientY-box.top,event.deltaY<0?1.2:1/1.2);
+                };
+                stage.ondblclick=function(){zoom=1;offsetX=0;offsetY=0;applyZoom();};
+                stage.onmousedown=function(event){
+                  if(event.button!==0){panning={x:event.clientX-offsetX,y:event.clientY-offsetY};return;}
+                  dragging=true;follow(event);
+                };
+                document.onmousemove=function(event){
+                  if(panning&&zoom>1){offsetX=event.clientX-panning.x;offsetY=event.clientY-panning.y;applyZoom();}
+                  else if(dragging){follow(event);}
+                };
+                document.onmouseup=function(){dragging=false;panning=null;};
                 show(%d);
                 </script></body></html>
                 """.formatted(svg, sourceSvg, splitPercent, splitPercent);
