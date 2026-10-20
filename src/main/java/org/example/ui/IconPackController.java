@@ -8,6 +8,7 @@ import org.example.export.SvgLayer;
 import org.example.export.SvgLayers;
 import org.example.model.IconAsset;
 import org.example.model.IconPack;
+import org.example.project.ProjectFile;
 import org.example.segmentation.SegmentationException;
 import org.example.segmentation.SegmentationHints;
 import org.example.segmentation.SubjectSegmenter;
@@ -48,6 +49,20 @@ public final class IconPackController {
 
     public IconPack pack() {
         return pack;
+    }
+
+    public void saveProject(Path file) throws IOException {
+        ProjectFile.save(pack, Objects.requireNonNull(file, "Project file is required"));
+    }
+
+    /** Replaces the package with the saved project; a failed read leaves it untouched. */
+    public void openProject(Path file) throws IOException {
+        ProjectFile.load(Objects.requireNonNull(file, "Project file is required"), pack);
+    }
+
+    /** Starts over with an empty package and default settings. */
+    public void newProject() {
+        pack.clear();
     }
 
     public List<ImportIssue> addImages(List<Path> paths) {

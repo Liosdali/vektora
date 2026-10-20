@@ -47,6 +47,26 @@ public final class IconPack {
         icons.add(icon);
     }
 
+    /** Forgets every icon, edit and setting, as a new package would start. */
+    public synchronized void clear() {
+        icons.clear();
+        backgroundSelections.clear();
+        backgroundHistory.clear();
+        hiddenLayerColors.clear();
+        subjectMasks.clear();
+        layerColors.clear();
+        subjectFrames.clear();
+        traceOptions = TraceOptions.recommended();
+        exportSettings = new SvgExportSettings(128, 128, 1);
+        palettes = List.of();
+    }
+
+    /** Puts back a saved selection without recording an undo step. */
+    public synchronized void restoreBackgroundSelection(IconAsset icon, BackgroundSelection selection) {
+        backgroundSelections.put(icon, selection);
+        backgroundHistory.remove(icon);
+    }
+
     public synchronized void addBackgroundRemovalSeed(IconAsset icon, PixelCoordinate seed) {
         addBackgroundRegion(icon, RegionSeed.at(seed));
     }

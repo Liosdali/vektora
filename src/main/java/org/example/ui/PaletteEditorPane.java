@@ -50,15 +50,22 @@ public final class PaletteEditorPane extends VBox {
         addPalette();
     }
 
+    /** Shows the given palettes, e.g. from an opened project, without reporting a change. */
+    public void setPalettes(List<List<Color>> palettes) {
+        editors.clear();
+        for (List<Color> palette : palettes) {
+            List<ColorPicker> pickers = new ArrayList<>();
+            palette.forEach(color -> pickers.add(picker(toFxColor(color))));
+            editors.add(pickers);
+        }
+        renderPaletteRows();
+    }
+
     private void addPalette(List<javafx.scene.paint.Color> colors) {
         List<ColorPicker> pickers = new ArrayList<>();
+        colors.forEach(color -> pickers.add(picker(color)));
         editors.add(pickers);
         renderPaletteRows();
-        VBox row = (VBox) paletteRows.getChildren().get(paletteRows.getChildren().size() - 1);
-        FlowPane colorRow = (FlowPane) row.getChildren().get(1);
-        for (javafx.scene.paint.Color color : colors) {
-            addColorPicker(pickers, color, colorRow);
-        }
         notifyChange();
     }
 
@@ -77,40 +84,50 @@ public final class PaletteEditorPane extends VBox {
             });
             HBox header = new HBox(8, title, remove);
             FlowPane colors = new FlowPane(6, 6);
+            List<ColorPicker> pickers = editors.get(index);
+            for (int position = 0; position < pickers.size(); position++) {
+                ColorPicker picker = pickers.get(position);
+                colors.getChildren().add(picker);
+                if (position > 0) {
+                    Button removeColor = new Button("×");
+                    removeColor.getStyleClass().add("ghost");
+                    removeColor.setAccessibleText("Rengi kaldır");
+                    removeColor.setOnAction(event -> {
+                        pickers.remove(picker);
+                        renderPaletteRows();
+                        notifyChange();
+                    });
+                    colors.getChildren().add(removeColor);
+                }
+            }
             VBox card = new VBox(8, header, colors);
             card.setPadding(new Insets(10));
             card.getStyleClass().add("palette-card");
             Button addColor = new Button("+ Renk");
             addColor.getStyleClass().setAll("link-button");
-            addColor.setOnAction(event -> addColorPicker(editors.get(paletteIndex),
-                    javafx.scene.paint.Color.WHITE, colors));
+            addColor.setOnAction(event -> {
+                editors.get(paletteIndex).add(picker(javafx.scene.paint.Color.WHITE));
+                renderPaletteRows();
+                notifyChange();
+            });
             card.getChildren().add(addColor);
             paletteRows.getChildren().add(card);
         }
     }
 
-    private void addColorPicker(
-            List<ColorPicker> pickers, javafx.scene.paint.Color color, FlowPane colorRow) {
+    private ColorPicker picker(javafx.scene.paint.Color color) {
         ColorPicker picker = new ColorPicker(color);
         picker.setStyle("-fx-color-label-visible: false;");
         picker.setOnAction(event -> notifyChange());
-        pickers.add(picker);
-        colorRow.getChildren().add(picker);
-        if (pickers.size() > 1) {
-            Button remove = new Button("×");
-            remove.getStyleClass().add("ghost");
-            remove.setAccessibleText("Rengi kaldır");
-            remove.setOnAction(event -> {
-                pickers.remove(picker);
-                colorRow.getChildren().removeAll(picker, remove);
-                notifyChange();
-            });
-            colorRow.getChildren().add(remove);
-        }
+        return picker;
     }
 
     private void notifyChange() {
         onChange.accept(palettes());
+    }
+
+    private static javafx.scene.paint.Color toFxColor(Color color) {
+        return javafx.scene.paint.Color.rgb(color.getRed(), color.getGreen(), color.getBlue(), color.getAlpha() / 255.0);
     }
 
     private static Color toAwtColor(javafx.scene.paint.Color color) {

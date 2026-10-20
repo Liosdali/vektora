@@ -9,6 +9,7 @@ import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
@@ -24,6 +25,8 @@ import javafx.stage.Window;
 import org.example.export.ExportFormat;
 import org.example.export.SvgExportSettings;
 import org.example.model.IconAsset;
+import org.example.project.ProjectFile;
+import org.example.project.RecentProjects;
 import org.example.segmentation.GrabCutSegmenter;
 import org.example.segmentation.ModelStore;
 import org.example.segmentation.OnnxSubjectSegmenter;
@@ -48,6 +51,8 @@ import java.util.function.Consumer;
 
 public final class IconWorkspace extends BorderPane {
     private static final KeyCombination UNDO = new KeyCodeCombination(KeyCode.Z, KeyCombination.SHORTCUT_DOWN);
+    private static final KeyCombination SAVE = new KeyCodeCombination(KeyCode.S, KeyCombination.SHORTCUT_DOWN);
+    private static final KeyCombination OPEN = new KeyCodeCombination(KeyCode.O, KeyCombination.SHORTCUT_DOWN);
     private static final String[] DETAIL_LEVELS = {"En ayrıntılı", "Ayrıntılı", "Dengeli", "Sade", "En sade"};
 
     private final IconPackController controller;
@@ -91,6 +96,10 @@ public final class IconWorkspace extends BorderPane {
     private final PreviewRequestTracker previewRequests = new PreviewRequestTracker();
     private final VBox settingsPane = new VBox(14);
     private final FirstRunGuide firstRunGuide = FirstRunGuide.forCurrentUser();
+    private final RecentProjects recentProjects = RecentProjects.forCurrentUser();
+    private final MenuButton projectMenu = new MenuButton("Proje");
+    private Path projectFile;
+    private boolean dirty;
     private boolean selectingBackground;
     private boolean syncingBackgroundControls;
     private boolean syncingTraceControls;
@@ -124,6 +133,18 @@ public final class IconWorkspace extends BorderPane {
     private void registerShortcuts(Scene scene) {
         if (scene != null) {
             scene.getAccelerators().put(UNDO, this::undoBackgroundEdit);
+            scene.getAccelerators().put(SAVE, () -> saveProject(false));
+            scene.getAccelerators().put(OPEN, this::openProject);
+            scene.windowProperty().addListener((observable, previous, window) -> {
+                if (window != null) {
+                    window.setOnCloseRequest(event -> {
+                        if (!confirmDiscard()) {
+                            event.consume();
+                        }
+                    });
+                    updateTitle();
+                }
+            });
         }
     }
 
@@ -148,7 +169,10 @@ public final class IconWorkspace extends BorderPane {
         importButton.setOnAction(event -> choosePngs());
         configureExportMenu();
         exportButton.getStyleClass().add("primary");
-        HBox actions = new HBox(10, packageCount, undoButton, importButton, exportButton);
+        projectMenu.getStyleClass().add("secondary");
+        projectMenu.setOnShowing(event -> configureProjectMenu());
+        configureProjectMenu();
+        HBox actions = new HBox(10, packageCount, undoButton, projectMenu, importButton, exportButton);
         actions.setAlignment(Pos.CENTER_RIGHT);
         HBox header = new HBox(16, brand, spacer, actions);
         header.setAlignment(Pos.CENTER_LEFT);
@@ -398,6 +422,159 @@ public final class IconWorkspace extends BorderPane {
         exportButton.getItems().setAll(individual, sprite, zip);
     }
 
+    private void configureProjectMenu() {
+        MenuItem create = new MenuItem("Yeni proje");
+        create.setOnAction(event -> newProject());
+        MenuItem open = new MenuItem("Projeyi aç…");
+        open.setAccelerator(OPEN);
+        open.setOnAction(event -> openProject());
+        MenuItem save = new MenuItem("Projeyi kaydet");
+        save.setAccelerator(SAVE);
+        save.setOnAction(event -> saveProject(false));
+        MenuItem saveAs = new MenuItem("Farklı kaydet…");
+        saveAs.setOnAction(event -> saveProject(true));
+        Menu recent = new Menu("Son projeler");
+        for (Path path : recentProjects.list()) {
+            MenuItem item = new MenuItem(path.getFileName() + "  ·  " + path.getParent());
+            item.setOnAction(event -> {
+                if (confirmDiscard()) {
+                    openProject(path);
+                }
+            });
+            recent.getItems().add(item);
+        }
+        recent.setDisable(recent.getItems().isEmpty());
+        projectMenu.getItems().setAll(create, open, save, saveAs, new SeparatorMenuItem(), recent);
+    }
+
+    private void markDirty() {
+        if (!dirty) {
+            dirty = true;
+            updateTitle();
+        }
+    }
+
+    private void updateTitle() {
+        if (getWindow() instanceof javafx.stage.Stage stage) {
+            String name = projectFile == null ? "Adsız proje" : projectFile.getFileName().toString();
+            stage.setTitle((dirty ? "• " : "") + name + " — Vektora");
+        }
+    }
+
+    /** Asks before unsaved work is thrown away; true when it is fine to go on. */
+    private boolean confirmDiscard() {
+        if (!dirty) {
+            return true;
+        }
+        ButtonType save = new ButtonType("Kaydet", ButtonBar.ButtonData.YES);
+        ButtonType discard = new ButtonType("Kaydetme", ButtonBar.ButtonData.NO);
+        Alert alert = new Alert(Alert.AlertType.WARNING, "Kaydedilmemiş değişiklikler kaybolacak.",
+                save, discard, ButtonType.CANCEL);
+        alert.initOwner(getWindow());
+        alert.setTitle("Kaydedilmemiş değişiklikler");
+        alert.setHeaderText("Projedeki değişiklikler kaydedilsin mi?");
+        ButtonType choice = alert.showAndWait().orElse(ButtonType.CANCEL);
+        if (choice == save) {
+            return saveProject(false);
+        }
+        return choice == discard;
+    }
+
+    private void newProject() {
+        if (confirmDiscard()) {
+            controller.newProject();
+            projectFile = null;
+            showPack("Yeni proje başladı.");
+        }
+    }
+
+    /** Saves synchronously so closing the window can wait for it; returns whether it worked. */
+    private boolean saveProject(boolean chooseFile) {
+        Path target = projectFile;
+        if (chooseFile || target == null) {
+            FileChooser chooser = new FileChooser();
+            chooser.setTitle("Projeyi kaydet");
+            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Vektora projesi", "*.vektora"));
+            chooser.setInitialFileName(projectFile == null ? "logo" + ProjectFile.EXTENSION
+                    : projectFile.getFileName().toString());
+            File file = chooser.showSaveDialog(getWindow());
+            if (file == null) {
+                return false;
+            }
+            target = file.toPath();
+            if (!target.getFileName().toString().endsWith(ProjectFile.EXTENSION)) {
+                target = target.resolveSibling(target.getFileName() + ProjectFile.EXTENSION);
+            }
+        }
+        try {
+            controller.saveProject(target);
+        } catch (IOException exception) {
+            showAlert(Alert.AlertType.ERROR, "Proje kaydedilemedi", exception.getMessage());
+            return false;
+        }
+        projectFile = target;
+        dirty = false;
+        recentProjects.add(target);
+        updateTitle();
+        status.setText("Proje kaydedildi: " + target);
+        return true;
+    }
+
+    private void openProject() {
+        if (!confirmDiscard()) {
+            return;
+        }
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("Proje aç");
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Vektora projesi", "*.vektora"));
+        File file = chooser.showOpenDialog(getWindow());
+        if (file != null) {
+            openProject(file.toPath());
+        }
+    }
+
+    private void openProject(Path file) {
+        Task<Void> task = new Task<>() {
+            @Override
+            protected Void call() throws IOException {
+                controller.openProject(file);
+                return null;
+            }
+        };
+        runTask(task, ignored -> {
+            projectFile = file;
+            recentProjects.add(file);
+            showPack("Proje açıldı: " + file.getFileName());
+        }, "Proje açılıyor…");
+    }
+
+    /** Shows whatever the package now holds, after it was replaced as a whole. */
+    private void showPack(String message) {
+        thumbnails.clear();
+        maskModels.clear();
+        if (selectingBackground) {
+            showSvgPreview();
+        }
+        syncTraceControls(controller.pack().traceOptions());
+        SvgExportSettings settings = controller.pack().exportSettings();
+        widthField.setText(Integer.toString(settings.width()));
+        heightField.setText(Integer.toString(settings.height()));
+        scaleField.setText(Double.toString(settings.scale()));
+        paletteEditor.setPalettes(controller.pack().palettes());
+        icons.setAll(controller.pack().icons());
+        packageCount.setText(icons.size() + " ikon");
+        iconList.getSelectionModel().clearSelection();
+        if (!icons.isEmpty()) {
+            iconList.getSelectionModel().selectFirst();
+        } else {
+            refreshPreview(null);
+        }
+        updateBackgroundControls(iconList.getSelectionModel().getSelectedItem());
+        dirty = false;
+        updateTitle();
+        status.setText(message);
+    }
+
     private void choosePngs() {
         FileChooser chooser = new FileChooser();
         chooser.setTitle("PNG veya JPG görselleri seç");
@@ -422,6 +599,7 @@ public final class IconWorkspace extends BorderPane {
             }
             updateBackgroundControls(iconList.getSelectionModel().getSelectedItem());
             status.setText(icons.size() + " ikon pakete eklendi.");
+            markDirty();
             if (!issues.isEmpty()) {
                 String details = issues.stream()
                         .map(issue -> issue.path().getFileName() + ": " + issue.message())
@@ -478,6 +656,7 @@ public final class IconWorkspace extends BorderPane {
                     Integer.parseInt(heightField.getText().trim()),
                     Double.parseDouble(scaleField.getText().trim()));
             controller.setExportSettings(settings);
+            markDirty();
             status.setText("SVG tuval ölçüsü ve ölçeği güncellendi.");
             refreshPreview(iconList.getSelectionModel().getSelectedItem());
         } catch (NumberFormatException exception) {
@@ -528,6 +707,7 @@ public final class IconWorkspace extends BorderPane {
                     TraceOptions.ColorMode.CUSTOM_PALETTE, palettes.getFirst().size(), palettes.getFirst());
         };
         controller.setTraceOptions(options.withSimplification(detailLevel()));
+        markDirty();
         refreshPreview(iconList.getSelectionModel().getSelectedItem());
     }
 
@@ -543,6 +723,7 @@ public final class IconWorkspace extends BorderPane {
 
     private void onPalettesChanged(List<List<Color>> palettes) {
         controller.setPalettes(palettes);
+        markDirty();
         if (palettes.isEmpty() && colorMode.getValue() != null
                 && colorMode.getValue().mode() == TraceOptions.ColorMode.CUSTOM_PALETTE) {
             colorMode.getSelectionModel().selectFirst();
@@ -582,12 +763,14 @@ public final class IconWorkspace extends BorderPane {
 
     private void toggleLayer(IconAsset icon, String color, boolean hidden) {
         controller.setLayerHidden(icon, color, hidden);
+        markDirty();
         refreshPreview(icon);
         status.setText(color.toUpperCase() + (hidden ? " katmanı gizlendi." : " katmanı yeniden gösteriliyor."));
     }
 
     private void recolorLayer(IconAsset icon, String color, String replacement) {
         controller.setLayerColor(icon, color, replacement);
+        markDirty();
         refreshPreview(icon);
         status.setText(replacement == null
                 ? color.toUpperCase() + " katmanı özgün rengine döndü."
@@ -658,6 +841,7 @@ public final class IconWorkspace extends BorderPane {
     }
 
     private void backgroundChanged(IconAsset icon, String message) {
+        markDirty();
         if (selectingBackground) {
             loadBackgroundPicker(icon);
         }
