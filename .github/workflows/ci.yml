@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: mvn test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '22'
+          cache: maven
+
+      # The real-model test runs only when -Dvektora.modelDir holds u2netp.onnx; it is
+      # downloaded once, checked against the hash pinned in SegmentationModel and cached.
+      - name: Cache segmentation model
+        uses: actions/cache@v4
+        with:
+          path: ~/.vektora/models
+          key: u2netp-309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8
+
+      - name: Download U2-Net-p model
+        shell: bash
+        run: |
+          mkdir -p ~/.vektora/models
+          model=~/.vektora/models/u2netp.onnx
+          if [ ! -f "$model" ]; then
+            curl -fsSL -o "$model" https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2netp.onnx
+          fi
+          echo "309c8469258dda742793dce0ebea8e6dd393174f89934733ecc8b14c76f4ddd8  $model" | sha256sum -c -
+
+      # JavaFX UI flow tests need a display; Linux runners get a virtual one.
+      - name: Test (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a mvn -B test "-Dvektora.modelDir=$HOME/.vektora/models"
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: mvn -B test "-Dvektora.modelDir=$HOME/.vektora/models"
+
+      - name: Keep test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports-${{ matrix.os }}
+          path: target/surefire-reports

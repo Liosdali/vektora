@@ -37,12 +37,22 @@ public final class IconPackController {
     private static final double MIN_SUGGESTED_SHARE = 0.01;
     /** Beyond this many layers a source-color trace is usually anti-aliasing noise, not design. */
     public static final int MAX_COMFORTABLE_LAYERS = 64;
+    /** Previews of images larger than this on either side are traced from a smaller copy. */
+    public static final int LARGE_IMAGE_SIDE = 2000;
+    public static final int MAX_PREVIEW_SIDE = 1000;
     /** Traced layers of similar images this close (ΔE) count as the same layer when copying edits. */
     private static final double SAME_LAYER_DISTANCE = 10;
 
     private final IconPack pack;
     private final SvgVectorizer vectorizer;
     private final SvgExportService exportService;
+    /** Recent traces, so toggling layers or reopening a preview does not trace again. */
+    private final Map<TraceKey, List<IconVariant>> traces = new LinkedHashMap<>(16, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<TraceKey, List<IconVariant>> eldest) {
+            return size() > 32;
+        }
+    };
 
     public IconPackController(IconPack pack, SvgVectorizer vectorizer, SvgExportService exportService) {
         this.pack = Objects.requireNonNull(pack, "Icon pack is required");
@@ -278,7 +288,7 @@ public final class IconPackController {
     }
 
     private List<String> tracedLayerColors(IconAsset icon) throws VectorizationException, IOException {
-        List<IconVariant> traced = traceVariants(icon, pack.backgroundSelection(icon));
+        List<IconVariant> traced = traceVariants(icon, pack.backgroundSelection(icon), true);
         return traced.isEmpty() ? List.of()
                 : SvgLayers.layers(traced.getFirst().svg()).stream().map(SvgLayer::color).toList();
     }
@@ -441,7 +451,7 @@ public final class IconPackController {
     /** Preview variants with hidden layers left out, plus every layer of the first variant. */
     public IconPreview previewWithLayers(IconAsset icon) throws VectorizationException, IOException {
         requireOwnedIcon(icon);
-        List<IconVariant> traced = traceVariants(icon, pack.backgroundSelection(icon));
+        List<IconVariant> traced = traceVariants(icon, pack.backgroundSelection(icon), true);
         LayerEdits edits = layerEdits(icon);
         List<IconVariant> previews = new ArrayList<>(traced.size());
         for (IconVariant variant : traced) {
@@ -535,25 +545,82 @@ public final class IconPackController {
 
     private List<IconVariant> traceVariants(IconAsset icon, BackgroundSelection selection)
             throws VectorizationException {
-        BufferedImage image = BackgroundRegionProcessor.removeSelection(
-                icon.image(), selection, pack.subjectMask(icon));
+        return traceVariants(icon, selection, false);
+    }
+
+    /**
+     * Traces the icon, or returns the result of an earlier trace with the same inputs. Previews
+     * of large images trace a smaller copy, colored from the full image so layers keep their keys.
+     */
+    private List<IconVariant> traceVariants(IconAsset icon, BackgroundSelection selection, boolean preview)
+            throws VectorizationException {
+        TraceOptions traceOptions = pack.traceOptions();
         List<List<Color>> palettes = pack.palettes();
-        if (pack.traceOptions().mode() == TraceOptions.ColorMode.CUSTOM_PALETTE && !palettes.isEmpty()) {
-            List<IconVariant> variants = new ArrayList<>(palettes.size());
+        SubjectMask mask = pack.subjectMask(icon);
+        TraceKey key = new TraceKey(icon, selection, traceOptions, palettes, mask, preview);
+        synchronized (traces) {
+            List<IconVariant> cached = traces.get(key);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        BufferedImage full = BackgroundRegionProcessor.removeSelection(icon.image(), selection, mask);
+        BufferedImage image = preview ? previewCopy(full) : full;
+        List<IconVariant> variants;
+        if (traceOptions.mode() == TraceOptions.ColorMode.CUSTOM_PALETTE && !palettes.isEmpty()) {
+            List<IconVariant> traced = new ArrayList<>(palettes.size());
             for (int index = 0; index < palettes.size(); index++) {
                 List<Color> palette = palettes.get(index);
-                TraceOptions options = new TraceOptions(TraceOptions.ColorMode.CUSTOM_PALETTE,
-                        palette.size(), palette, pack.traceOptions().simplification());
-                String svg = vectorizer.vectorize(image, options);
-                variants.add(new IconVariant(icon.name(), "palette-" + (index + 1), svg));
+                TraceOptions options = new TraceOptions(TraceOptions.ColorMode.CUSTOM_PALETTE, palette.size(),
+                        palette, traceOptions.simplification(), traceOptions.fitShapes(), traceOptions.symmetry());
+                String svg = vectorizer.vectorize(image, options, full);
+                traced.add(new IconVariant(icon.name(), "palette-" + (index + 1), svg));
             }
-            return List.copyOf(variants);
+            variants = List.copyOf(traced);
+        } else {
+            String variantName = traceOptions.mode() == TraceOptions.ColorMode.CUSTOM_PALETTE ? "custom" : "default";
+            variants = List.of(new IconVariant(icon.name(), variantName, vectorizer.vectorize(image, traceOptions, full)));
+        }
+        synchronized (traces) {
+            traces.put(key, variants);
+        }
+        return variants;
+    }
+
+    /** Everything a trace depends on; icons and masks compare by identity. */
+    private record TraceKey(IconAsset icon, BackgroundSelection selection, TraceOptions options,
+                            List<List<Color>> palettes, SubjectMask mask, boolean preview) {
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof TraceKey key && key.icon == icon && key.mask == mask
+                    && key.preview == preview && key.selection.equals(selection)
+                    && key.options.equals(options) && key.palettes.equals(palettes);
         }
 
-        String variantName = pack.traceOptions().mode() == TraceOptions.ColorMode.CUSTOM_PALETTE
-                ? "custom" : "default";
-        String svg = vectorizer.vectorize(image, pack.traceOptions());
-        return List.of(new IconVariant(icon.name(), variantName, svg));
+        @Override
+        public int hashCode() {
+            return Objects.hash(System.identityHashCode(icon), selection, options, palettes,
+                    System.identityHashCode(mask), preview);
+        }
+    }
+
+    /** A copy at most {@link #MAX_PREVIEW_SIDE} wide and high when the image is large, else the image. */
+    private static BufferedImage previewCopy(BufferedImage image) {
+        int side = Math.max(image.getWidth(), image.getHeight());
+        if (side <= LARGE_IMAGE_SIDE) {
+            return image;
+        }
+        double scale = (double) MAX_PREVIEW_SIDE / side;
+        int width = Math.max(1, (int) Math.round(image.getWidth() * scale));
+        int height = Math.max(1, (int) Math.round(image.getHeight() * scale));
+        BufferedImage copy = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = copy.createGraphics();
+        try {
+            graphics.drawImage(image.getScaledInstance(width, height, Image.SCALE_AREA_AVERAGING), 0, 0, null);
+        } finally {
+            graphics.dispose();
+        }
+        return copy;
     }
 
     private void requireOwnedIcon(IconAsset icon) {

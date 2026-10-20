@@ -41,6 +41,13 @@ public final class IconPreviewPane extends BorderPane {
         setTop(header);
         setCenter(previews);
         VBox.setVgrow(previews, Priority.ALWAYS);
+        // Each WebView holds a whole browser engine, so only the selected tab keeps one.
+        previews.getSelectionModel().selectedItemProperty().addListener((observable, previous, selected) -> {
+            if (previous != null && previous.getUserData() instanceof String) {
+                previous.setContent(null);
+            }
+            load(selected);
+        });
         showEmptyState();
     }
 
@@ -72,13 +79,21 @@ public final class IconPreviewPane extends BorderPane {
         }
 
         for (IconVariant variant : variants) {
+            Tab tab = new Tab(variant.variantName());
+            tab.setClosable(false);
+            tab.setUserData(sourceSvg == null
+                    ? previewDocument(variant.svg()) : previewDocument(variant.svg(), sourceSvg, splitPercent));
+            previews.getTabs().add(tab);
+        }
+        load(previews.getSelectionModel().getSelectedItem());
+    }
+
+    private static void load(Tab tab) {
+        if (tab != null && tab.getContent() == null && tab.getUserData() instanceof String document) {
             WebView webView = new WebView();
             webView.setContextMenuEnabled(false);
-            webView.getEngine().loadContent(sourceSvg == null
-                    ? previewDocument(variant.svg()) : previewDocument(variant.svg(), sourceSvg, splitPercent));
-            Tab tab = new Tab(variant.variantName(), webView);
-            tab.setClosable(false);
-            previews.getTabs().add(tab);
+            webView.getEngine().loadContent(document);
+            tab.setContent(webView);
         }
     }
 

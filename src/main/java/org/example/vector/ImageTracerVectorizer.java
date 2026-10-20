@@ -13,6 +13,12 @@ import jankovicsandras.imagetracer.ImageTracer;
 public final class ImageTracerVectorizer implements SvgVectorizer {
     @Override
     public String vectorize(BufferedImage image, TraceOptions options) throws VectorizationException {
+        return vectorize(image, options, image);
+    }
+
+    @Override
+    public String vectorize(BufferedImage image, TraceOptions options, BufferedImage paletteSource)
+            throws VectorizationException {
         if (image == null || image.getWidth() <= 0 || image.getHeight() <= 0) {
             throw new VectorizationException("A non-empty PNG image is required");
         }
@@ -22,16 +28,19 @@ public final class ImageTracerVectorizer implements SvgVectorizer {
 
         BufferedImage artwork = symmetric(cropToArtwork(BackgroundRegionProcessor.removeBorderBackground(image)),
                 options.symmetry());
+        BufferedImage paletteArtwork = paletteSource == null || paletteSource == image ? artwork
+                : symmetric(cropToArtwork(BackgroundRegionProcessor.removeBorderBackground(paletteSource)),
+                        options.symmetry());
         boolean hasTransparency = hasTransparentPixels(artwork);
         boolean mergeBlends = options.simplification() >= 1;
         List<Color> sourceColors = options.mode() == TraceOptions.ColorMode.PRESERVE_SOURCE
-                ? sourcePalette(artwork, mergeBlends) : List.of();
+                ? sourcePalette(paletteArtwork, mergeBlends) : List.of();
         List<Color> customColors = options.mode() == TraceOptions.ColorMode.CUSTOM_PALETTE
                 ? customPalette(options.palette(), hasTransparency) : List.of();
         // ImageTracer's own color reduction reseeds clusters at random, so the same image could
         // trace to different colors each time; a palette computed here keeps it reproducible.
         List<Color> reducedColors = options.mode() == TraceOptions.ColorMode.REDUCE_SOURCE
-                ? customPalette(reducedPalette(artwork, options.maxColors(), mergeBlends), hasTransparency)
+                ? customPalette(reducedPalette(paletteArtwork, options.maxColors(), mergeBlends), hasTransparency)
                 : List.of();
 
         HashMap<String, Float> tracerOptions = new HashMap<>();

@@ -566,6 +566,84 @@ class IconPackControllerTest {
     }
 
     @Test
+    void tracesEachSettingOnlyOnceUntilSomethingChanges(@TempDir Path directory) throws Exception {
+        java.util.concurrent.atomic.AtomicInteger traces = new java.util.concurrent.atomic.AtomicInteger();
+        ImageTracerVectorizer tracer = new ImageTracerVectorizer();
+        IconPackController controller = new IconPackController(new IconPack(), (image, options) -> {
+            traces.incrementAndGet();
+            return tracer.vectorize(image, options);
+        }, new SvgExportService());
+        controller.addImages(List.of(writePng(directory.resolve("sun.png"), Color.ORANGE)));
+        IconAsset icon = controller.pack().icons().getFirst();
+
+        controller.previewWithLayers(icon);
+        controller.previewWithLayers(icon);
+        controller.setLayerHidden(icon, "#ffa500", false);
+        controller.previewWithLayers(icon);
+        assertEquals(1, traces.get());
+
+        controller.setBackgroundTolerance(icon, 20);
+        controller.previewWithLayers(icon);
+        assertEquals(2, traces.get());
+    }
+
+    @Test
+    void previewsLargeImagesFromASmallerCopyWithTheSameLayerColors(@TempDir Path directory) throws Exception {
+        BufferedImage wide = new BufferedImage(2400, 60, BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D graphics = wide.createGraphics();
+        graphics.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+        graphics.setColor(Color.WHITE);
+        graphics.fillRect(0, 0, 2400, 60);
+        graphics.setColor(new Color(0x1E2A44));
+        graphics.fillOval(100, 5, 900, 50);
+        graphics.setColor(new Color(0xE9B949));
+        graphics.fillOval(1300, 5, 900, 50);
+        graphics.dispose();
+        Path source = directory.resolve("wide.png");
+        ImageIO.write(wide, "png", source.toFile());
+        IconPackController controller = controller();
+        controller.addImages(List.of(source));
+        IconAsset icon = controller.pack().icons().getFirst();
+
+        org.example.ui.IconPreview preview = controller.previewWithLayers(icon);
+        Path exported = directory.resolve("out");
+        controller.export(exported, ExportFormat.INDIVIDUAL_SVGS);
+        String full = Files.readString(exported.resolve("wide-default.svg"));
+
+        assertTrue(viewBoxWidth(preview.variants().getFirst().svg()) <= IconPackController.MAX_PREVIEW_SIDE + 2);
+        assertTrue(viewBoxWidth(full) > 2000);
+        assertEquals(preview.layers().stream().map(org.example.export.SvgLayer::color).sorted().toList(),
+                org.example.export.SvgLayers.layers(full).stream().map(org.example.export.SvgLayer::color).sorted().toList());
+    }
+
+    private static double viewBoxWidth(String svg) {
+        java.util.regex.Matcher inner = java.util.regex.Pattern.compile("<svg[^>]*viewBox=\"[-0-9.]+ [-0-9.]+ ([0-9.]+)")
+                .matcher(svg.substring(svg.indexOf('>') + 1));
+        assertTrue(inner.find(), svg);
+        return Double.parseDouble(inner.group(1));
+    }
+
+    @Test
+    void paletteVariantsKeepShapeFittingAndSymmetry(@TempDir Path directory) throws Exception {
+        List<TraceOptions> seen = new java.util.concurrent.CopyOnWriteArrayList<>();
+        ImageTracerVectorizer tracer = new ImageTracerVectorizer();
+        IconPackController controller = new IconPackController(new IconPack(), (image, options) -> {
+            seen.add(options);
+            return tracer.vectorize(image, options);
+        }, new SvgExportService());
+        controller.addImages(List.of(writePng(directory.resolve("sun.png"), Color.ORANGE)));
+        controller.setPalettes(List.of(List.of(Color.RED), List.of(Color.BLUE)));
+        controller.setTraceOptions(new TraceOptions(TraceOptions.ColorMode.CUSTOM_PALETTE, 1, List.of(Color.RED), 0,
+                true, TraceOptions.Symmetry.HORIZONTAL));
+
+        controller.previewWithLayers(controller.pack().icons().getFirst());
+
+        assertEquals(2, seen.size());
+        assertTrue(seen.stream().allMatch(options -> options.fitShapes()
+                && options.symmetry() == TraceOptions.Symmetry.HORIZONTAL));
+    }
+
+    @Test
     void newPackReducesToEightColorsAtTheDetailedLevel() {
         TraceOptions options = controller().pack().traceOptions();
 

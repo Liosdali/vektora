@@ -81,3 +81,21 @@ paleti kuş, yazı ya da benzeri nesneleri anlamsal olarak tanımaz. Karmaşık 
 kullanıcı seçmelidir.
 
 İşleme yereldir; PNG görselleri bilgisayardan dışarı gönderilmez. Vektörleştirme kütüphanesinin lisansı `src/main/resources/META-INF/third-party/imagetracerjava-LICENSE.txt` dosyasındadır.
+
+## Geliştirme
+
+- **Testler:** `mvn test`. Gerçek konu ayırma modeliyle çalışan test yalnızca `-Dvektora.modelDir=<klasör>`
+  `u2netp.onnx` dosyasını gösterdiğinde çalışır. `IconWorkspaceFlowTest` arayüzü JavaFX üzerinde gerçekten
+  sürer (görsel ekleme, arka plan seçme, geri alma, katman gizleme); ekran yoksa kendiliğinden atlanır.
+  Linux'ta sanal ekranla çalıştırmak için: `xvfb-run -a mvn test`.
+- **CI:** `.github/workflows/ci.yml` her push ve PR'da Windows ve Linux üzerinde testleri çalıştırır. Model bir kez
+  indirilir, SHA-256 ile doğrulanır ve önbelleğe alınır.
+- **Kurulum paketi:** `./packaging/package-windows.ps1` kendi Java çalışma zamanını taşıyan bir Windows
+  kurulum dosyası (`-Type exe` veya `msi`, WiX Toolset 3 gerekir) ya da kurulumsuz bir uygulama klasörü
+  (`-Type app-image`) üretir; çıktı `target/installer` altındadır. Paket, betiği çalıştıran JDK'nın çalışma
+  zamanını taşır. ONNX Runtime'ın 1.20.0'da kilitli olmasının nedeni `pom.xml`'de yazılıdır; pakete daha yeni bir
+  MSVC çalışma zamanı eklenirse yükseltilebilir.
+- **Önizleme performansı:** Aynı ayarlarla yapılan izlemeler önbellekten gelir; katman gizlemek ya da önizlemeyi
+  yeniden açmak yeniden izleme yapmaz. 2000 pikselden büyük görsellerin önizlemesi en fazla 1000 piksellik bir
+  kopyadan, tam görselin renkleriyle izlenir; dışa aktarım her zaman tam boyuttadır. Önizleme sekmelerinden
+  yalnızca seçili olan bir tarayıcı motoru tutar.
