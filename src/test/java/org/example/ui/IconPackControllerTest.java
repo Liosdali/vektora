@@ -432,6 +432,39 @@ class IconPackControllerTest {
     }
 
     @Test
+    void redoBringsBackWhatUndoRemovedUntilANewEditIsMade(@TempDir Path directory) throws Exception {
+        Path source = writePng(directory.resolve("sun.png"), Color.ORANGE);
+        IconPackController controller = controller();
+        controller.addImages(List.of(source));
+        IconAsset icon = controller.pack().icons().getFirst();
+        controller.addBackgroundRemovalSeed(icon, new PixelCoordinate(0, 0));
+        controller.addBackgroundRemovalSeed(icon, new PixelCoordinate(7, 7));
+        assertFalse(controller.canRedoBackgroundEdit(icon));
+
+        controller.undoBackgroundEdit(icon);
+        controller.undoBackgroundEdit(icon);
+        assertTrue(controller.redoBackgroundEdit(icon));
+
+        assertEquals(List.of(new PixelCoordinate(0, 0)), controller.backgroundRemovalSeeds(icon));
+        assertTrue(controller.canRedoBackgroundEdit(icon));
+        controller.addBackgroundRemovalSeed(icon, new PixelCoordinate(3, 3));
+        assertFalse(controller.canRedoBackgroundEdit(icon));
+        assertFalse(controller.redoBackgroundEdit(icon));
+    }
+
+    @Test
+    void addsAPastedImageUnderItsOwnName() {
+        IconPackController controller = controller();
+        BufferedImage pasted = new BufferedImage(5, 4, BufferedImage.TYPE_INT_ARGB);
+
+        IconAsset icon = controller.addImage("pano-1", pasted);
+
+        assertEquals(List.of(icon), controller.pack().icons());
+        assertEquals("pano-1", icon.name());
+        assertEquals(5, icon.image().getWidth());
+    }
+
+    @Test
     void newPackReducesToEightColorsAtTheDetailedLevel() {
         TraceOptions options = controller().pack().traceOptions();
 

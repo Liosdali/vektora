@@ -19,6 +19,7 @@ public final class IconPack {
     private final List<IconAsset> icons = new ArrayList<>();
     private final Map<IconAsset, BackgroundSelection> backgroundSelections = new IdentityHashMap<>();
     private final Map<IconAsset, Deque<BackgroundSelection>> backgroundHistory = new IdentityHashMap<>();
+    private final Map<IconAsset, Deque<BackgroundSelection>> backgroundRedo = new IdentityHashMap<>();
     private final Map<IconAsset, Set<String>> hiddenLayerColors = new IdentityHashMap<>();
     private final Map<IconAsset, SubjectMask> subjectMasks = new IdentityHashMap<>();
     private final Map<IconAsset, Map<String, String>> layerColors = new IdentityHashMap<>();
@@ -52,6 +53,7 @@ public final class IconPack {
         icons.clear();
         backgroundSelections.clear();
         backgroundHistory.clear();
+        backgroundRedo.clear();
         hiddenLayerColors.clear();
         subjectMasks.clear();
         layerColors.clear();
@@ -65,6 +67,7 @@ public final class IconPack {
     public synchronized void restoreBackgroundSelection(IconAsset icon, BackgroundSelection selection) {
         backgroundSelections.put(icon, selection);
         backgroundHistory.remove(icon);
+        backgroundRedo.remove(icon);
     }
 
     public synchronized void addBackgroundRemovalSeed(IconAsset icon, PixelCoordinate seed) {
@@ -118,11 +121,31 @@ public final class IconPack {
             return false;
         }
         BackgroundSelection current = backgroundSelection(icon);
-        BackgroundSelection previous = history.pop();
-        // Undo restores the removal edits; tolerance and defringe stay as the user last set them.
-        backgroundSelections.put(icon, new BackgroundSelection(previous.regions(), previous.strokes(),
-                previous.protectStrokes(), current.tolerance(), current.defringe(), previous.keepSubjectOnly()));
+        backgroundRedo.computeIfAbsent(icon, ignored -> new ArrayDeque<>()).push(current);
+        backgroundSelections.put(icon, withSettingsOf(history.pop(), current));
         return true;
+    }
+
+    public synchronized boolean canRedoBackgroundEdit(IconAsset icon) {
+        Deque<BackgroundSelection> redo = backgroundRedo.get(icon);
+        return redo != null && !redo.isEmpty();
+    }
+
+    public synchronized boolean redoBackgroundEdit(IconAsset icon) {
+        Deque<BackgroundSelection> redo = backgroundRedo.get(icon);
+        if (redo == null || redo.isEmpty()) {
+            return false;
+        }
+        BackgroundSelection current = backgroundSelection(icon);
+        backgroundHistory.computeIfAbsent(icon, ignored -> new ArrayDeque<>()).push(current);
+        backgroundSelections.put(icon, withSettingsOf(redo.pop(), current));
+        return true;
+    }
+
+    /** Undo and redo move the removal edits; tolerance and defringe stay as the user last set them. */
+    private static BackgroundSelection withSettingsOf(BackgroundSelection edits, BackgroundSelection settings) {
+        return new BackgroundSelection(edits.regions(), edits.strokes(), edits.protectStrokes(),
+                settings.tolerance(), settings.defringe(), edits.keepSubjectOnly());
     }
 
     public synchronized void setKeepSubjectOnly(IconAsset icon, boolean keep) {
@@ -206,6 +229,7 @@ public final class IconPack {
         while (history.size() > MAX_UNDO_STEPS) {
             history.removeLast();
         }
+        backgroundRedo.remove(icon);
         backgroundSelections.put(icon, edit.apply(current));
     }
 }

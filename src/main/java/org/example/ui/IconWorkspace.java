@@ -15,7 +15,9 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.input.Clipboard;
 import javafx.scene.input.KeyCode;
+import javafx.scene.input.TransferMode;
 import javafx.scene.input.KeyCodeCombination;
 import javafx.scene.input.KeyCombination;
 import javafx.scene.layout.*;
@@ -53,6 +55,10 @@ public final class IconWorkspace extends BorderPane {
     private static final KeyCombination UNDO = new KeyCodeCombination(KeyCode.Z, KeyCombination.SHORTCUT_DOWN);
     private static final KeyCombination SAVE = new KeyCodeCombination(KeyCode.S, KeyCombination.SHORTCUT_DOWN);
     private static final KeyCombination OPEN = new KeyCodeCombination(KeyCode.O, KeyCombination.SHORTCUT_DOWN);
+    private static final KeyCombination REDO =
+            new KeyCodeCombination(KeyCode.Z, KeyCombination.SHORTCUT_DOWN, KeyCombination.SHIFT_DOWN);
+    private static final KeyCombination REDO_ALTERNATIVE = new KeyCodeCombination(KeyCode.Y, KeyCombination.SHORTCUT_DOWN);
+    private static final KeyCombination PASTE = new KeyCodeCombination(KeyCode.V, KeyCombination.SHORTCUT_DOWN);
     private static final String[] DETAIL_LEVELS = {"En ayrıntılı", "Ayrıntılı", "Dengeli", "Sade", "En sade"};
 
     private final IconPackController controller;
@@ -71,6 +77,7 @@ public final class IconWorkspace extends BorderPane {
     private final TextField scaleField = new TextField("1.0");
     private final Button importButton = new Button("PNG/JPG ekle");
     private final Button undoButton = new Button("Geri al");
+    private final Button redoButton = new Button("Yinele");
     private final Button selectBackgroundButton = new Button("Elle seç ve düzelt");
     private final Button detectSubjectButton = new Button("Konuyu otomatik bul");
     private final Button detectAllButton = new Button("Tüm görsellerde bul");
@@ -103,6 +110,7 @@ public final class IconWorkspace extends BorderPane {
     private boolean selectingBackground;
     private boolean syncingBackgroundControls;
     private boolean syncingTraceControls;
+    private int pastedImages;
 
     public IconWorkspace(IconPackController controller) {
         this.controller = controller;
@@ -128,11 +136,15 @@ public final class IconWorkspace extends BorderPane {
                     }
                 });
         sceneProperty().addListener((observable, previous, scene) -> registerShortcuts(scene));
+        configureDragAndDrop();
     }
 
     private void registerShortcuts(Scene scene) {
         if (scene != null) {
             scene.getAccelerators().put(UNDO, this::undoBackgroundEdit);
+            scene.getAccelerators().put(REDO, this::redoBackgroundEdit);
+            scene.getAccelerators().put(REDO_ALTERNATIVE, this::redoBackgroundEdit);
+            scene.getAccelerators().put(PASTE, () -> paste(scene));
             scene.getAccelerators().put(SAVE, () -> saveProject(false));
             scene.getAccelerators().put(OPEN, this::openProject);
             scene.windowProperty().addListener((observable, previous, window) -> {
@@ -165,6 +177,9 @@ public final class IconWorkspace extends BorderPane {
         undoButton.getStyleClass().add("secondary");
         undoButton.setTooltip(new Tooltip("Son arka plan düzenlemesini geri al (Ctrl+Z)"));
         undoButton.setOnAction(event -> undoBackgroundEdit());
+        redoButton.getStyleClass().add("secondary");
+        redoButton.setTooltip(new Tooltip("Geri alınan düzenlemeyi yeniden uygula (Ctrl+Shift+Z)"));
+        redoButton.setOnAction(event -> redoBackgroundEdit());
         importButton.getStyleClass().add("secondary");
         importButton.setOnAction(event -> choosePngs());
         configureExportMenu();
@@ -172,7 +187,7 @@ public final class IconWorkspace extends BorderPane {
         projectMenu.getStyleClass().add("secondary");
         projectMenu.setOnShowing(event -> configureProjectMenu());
         configureProjectMenu();
-        HBox actions = new HBox(10, packageCount, undoButton, projectMenu, importButton, exportButton);
+        HBox actions = new HBox(10, packageCount, undoButton, redoButton, projectMenu, importButton, exportButton);
         actions.setAlignment(Pos.CENTER_RIGHT);
         HBox header = new HBox(16, brand, spacer, actions);
         header.setAlignment(Pos.CENTER_LEFT);
@@ -575,6 +590,54 @@ public final class IconWorkspace extends BorderPane {
         status.setText(message);
     }
 
+    /** Files and images dropped anywhere on the window are added; a dropped project is opened. */
+    private void configureDragAndDrop() {
+        setOnDragOver(event -> {
+            if (event.getDragboard().hasFiles() && !DroppedFiles.of(paths(event.getDragboard().getFiles())).isEmpty()) {
+                event.acceptTransferModes(TransferMode.COPY);
+            }
+            event.consume();
+        });
+        setOnDragDropped(event -> {
+            DroppedFiles dropped = DroppedFiles.of(paths(event.getDragboard().getFiles()));
+            dropped.project().ifPresentOrElse(project -> {
+                if (confirmDiscard()) {
+                    openProject(project);
+                }
+            }, () -> importPaths(dropped.images()));
+            event.setDropCompleted(!dropped.isEmpty());
+            event.consume();
+        });
+    }
+
+    private static List<Path> paths(List<File> files) {
+        return files == null ? List.of() : files.stream().map(File::toPath).toList();
+    }
+
+    /** Ctrl+V: pastes text into a focused field, otherwise adds copied image files or a copied image. */
+    private void paste(Scene scene) {
+        if (scene.getFocusOwner() instanceof TextInputControl field) {
+            field.paste();
+            return;
+        }
+        Clipboard clipboard = Clipboard.getSystemClipboard();
+        if (clipboard.hasFiles()) {
+            List<Path> images = DroppedFiles.of(paths(clipboard.getFiles())).images();
+            if (!images.isEmpty()) {
+                importPaths(images);
+                return;
+            }
+        }
+        if (clipboard.hasImage()) {
+            IconAsset icon = controller.addImage("pano-" + (++pastedImages), FxImages.toBufferedImage(clipboard.getImage()));
+            icons.setAll(controller.pack().icons());
+            packageCount.setText(icons.size() + " ikon");
+            iconList.getSelectionModel().select(icon);
+            markDirty();
+            status.setText("Panodaki görsel pakete eklendi.");
+        }
+    }
+
     private void choosePngs() {
         FileChooser chooser = new FileChooser();
         chooser.setTitle("PNG veya JPG görselleri seç");
@@ -584,7 +647,13 @@ public final class IconWorkspace extends BorderPane {
         if (files == null || files.isEmpty()) {
             return;
         }
-        List<Path> paths = files.stream().map(File::toPath).toList();
+        importPaths(paths(files));
+    }
+
+    private void importPaths(List<Path> paths) {
+        if (paths.isEmpty()) {
+            return;
+        }
         Task<List<ImportIssue>> task = new Task<>() {
             @Override
             protected List<ImportIssue> call() {
@@ -915,6 +984,13 @@ public final class IconWorkspace extends BorderPane {
         }
     }
 
+    private void redoBackgroundEdit() {
+        IconAsset icon = iconList.getSelectionModel().getSelectedItem();
+        if (icon != null && controller.redoBackgroundEdit(icon)) {
+            backgroundChanged(icon, "Geri alınan düzenleme yeniden uygulandı.");
+        }
+    }
+
     private void undoBackgroundEdit() {
         IconAsset icon = iconList.getSelectionModel().getSelectedItem();
         if (icon != null && controller.undoBackgroundEdit(icon)) {
@@ -938,6 +1014,7 @@ public final class IconWorkspace extends BorderPane {
         showSvgPreviewButton.setDisable(!selectingBackground);
         clearBackgroundButton.setDisable(!selection.hasEdits());
         undoButton.setDisable(!hasIcon || !controller.canUndoBackgroundEdit(icon));
+        redoButton.setDisable(!hasIcon || !controller.canRedoBackgroundEdit(icon));
         toleranceSlider.setDisable(!hasIcon);
         defringeBox.setDisable(!hasIcon);
         detectSubjectButton.setDisable(!hasIcon);

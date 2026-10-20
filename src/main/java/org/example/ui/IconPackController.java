@@ -65,6 +65,14 @@ public final class IconPackController {
         pack.clear();
     }
 
+    /** Adds an image that has no file of its own, such as one pasted from the clipboard. */
+    public IconAsset addImage(String name, BufferedImage image) {
+        Objects.requireNonNull(image, "Image is required");
+        IconAsset icon = new IconAsset(Path.of(name + ".png"), name, image);
+        pack.addIcon(icon);
+        return icon;
+    }
+
     public List<ImportIssue> addImages(List<Path> paths) {
         Objects.requireNonNull(paths, "PNG paths are required");
         List<ImportIssue> issues = new ArrayList<>();
@@ -234,6 +242,16 @@ public final class IconPackController {
     public boolean undoBackgroundEdit(IconAsset icon) {
         requireOwnedIcon(icon);
         return pack.undoBackgroundEdit(icon);
+    }
+
+    public boolean canRedoBackgroundEdit(IconAsset icon) {
+        requireOwnedIcon(icon);
+        return pack.canRedoBackgroundEdit(icon);
+    }
+
+    public boolean redoBackgroundEdit(IconAsset icon) {
+        requireOwnedIcon(icon);
+        return pack.redoBackgroundEdit(icon);
     }
 
     /** The source image after manual and automatic background removal, as the tracer will see it. */
