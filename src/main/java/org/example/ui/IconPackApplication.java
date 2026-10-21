@@ -2,6 +2,7 @@ package org.example.ui;
 
 import javafx.application.Application;
 import javafx.scene.Scene;
+import javafx.scene.image.Image;
 import javafx.stage.Stage;
 import org.example.export.SvgExportService;
 import org.example.model.IconPack;
@@ -17,6 +18,7 @@ public final class IconPackApplication extends Application {
         scene.getStylesheets().add(
                 IconPackApplication.class.getResource("vektora.css").toExternalForm());
         stage.setTitle("Vectora | PNG'den SVG ikon paketi");
+        stage.getIcons().add(new Image(IconPackApplication.class.getResourceAsStream("vectora-icon.png")));
         stage.setMinWidth(960);
         stage.setMinHeight(680);
         stage.setScene(scene);

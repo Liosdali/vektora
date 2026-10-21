@@ -30,6 +30,7 @@ try {
         '--name', 'Vectora',
         '--app-version', $Version,
         '--vendor', 'Vectora',
+        '--icon', (Join-Path $PSScriptRoot 'vectora.ico'),
         '--description', 'PNG ve JPG gorsellerden SVG logo ve ikon paketi',
         '--input', 'target/package-input',
         '--main-jar', 'vectora.jar',
