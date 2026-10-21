@@ -1,12 +1,6 @@
 package org.example.ui;
 
-import org.example.export.ExportFormat;
-import org.example.export.IconVariant;
-import org.example.export.LayerEdits;
-import org.example.export.SvgExportService;
-import org.example.export.SvgExportSettings;
-import org.example.export.SvgLayer;
-import org.example.export.SvgLayers;
+import org.example.export.*;
 import org.example.model.IconAsset;
 import org.example.model.IconPack;
 import org.example.project.ProjectFile;
@@ -19,7 +13,6 @@ import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
-import java.awt.Rectangle;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -93,6 +86,15 @@ public final class IconPackController {
         IconAsset icon = new IconAsset(Path.of(name + ".png"), name, image);
         pack.addIcon(icon);
         return icon;
+    }
+
+    /**
+     * Removes the icon and its edits from the package.
+     */
+    public void removeImage(IconAsset icon) {
+        requireOwnedIcon(icon);
+        pack.removeIcon(icon);
+        forgetTraces();
     }
 
     public List<ImportIssue> addImages(List<Path> paths) {

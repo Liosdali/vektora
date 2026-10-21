@@ -15,12 +15,7 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
-import javafx.scene.input.Clipboard;
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyEvent;
-import javafx.scene.input.TransferMode;
-import javafx.scene.input.KeyCodeCombination;
-import javafx.scene.input.KeyCombination;
+import javafx.scene.input.*;
 import javafx.scene.layout.*;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
@@ -30,12 +25,7 @@ import org.example.export.SvgExportSettings;
 import org.example.model.IconAsset;
 import org.example.project.ProjectFile;
 import org.example.project.RecentProjects;
-import org.example.segmentation.GrabCutSegmenter;
-import org.example.segmentation.ModelStore;
-import org.example.segmentation.OnnxSubjectSegmenter;
-import org.example.segmentation.SegmentationException;
-import org.example.segmentation.SegmentationModel;
-import org.example.segmentation.SubjectSegmenter;
+import org.example.segmentation.*;
 import org.example.vector.BackgroundSelection;
 import org.example.vector.TraceOptions;
 import org.example.vector.VectorizationException;
@@ -44,11 +34,8 @@ import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.EnumMap;
-import java.util.IdentityHashMap;
+import java.util.*;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -262,6 +249,15 @@ public final class IconWorkspace extends BorderPane {
             }
         });
         iconList.setPrefHeight(260);
+        MenuItem removeItem = new MenuItem("Paketten sil");
+        removeItem.setOnAction(event -> removeSelectedIcon());
+        iconList.setContextMenu(new ContextMenu(removeItem));
+        iconList.setOnKeyPressed(event -> {
+            if (event.getCode() == KeyCode.DELETE || event.getCode() == KeyCode.BACK_SPACE) {
+                removeSelectedIcon();
+                event.consume();
+            }
+        });
         VBox.setVgrow(iconList, Priority.ALWAYS);
         ScrollPane layerScroll = new ScrollPane(layerList);
         layerScroll.setFitToWidth(true);
@@ -740,6 +736,26 @@ public final class IconWorkspace extends BorderPane {
             markDirty();
             status.setText("Panodaki görsel pakete eklendi.");
         }
+    }
+
+    private void removeSelectedIcon() {
+        IconAsset icon = iconList.getSelectionModel().getSelectedItem();
+        if (icon == null) {
+            return;
+        }
+        controller.removeImage(icon);
+        thumbnails.remove(icon);
+        maskModels.remove(icon);
+        icons.remove(icon);
+        packageCount.setText(icons.size() + " ikon");
+        if (icons.isEmpty()) {
+            refreshPreview(null);
+        } else if (iconList.getSelectionModel().getSelectedItem() == null) {
+            iconList.getSelectionModel().selectFirst();
+        }
+        updateBackgroundControls(iconList.getSelectionModel().getSelectedItem());
+        markDirty();
+        status.setText("\"" + icon.name() + "\" paketten silindi.");
     }
 
     private void choosePngs() {

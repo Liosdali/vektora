@@ -1,12 +1,7 @@
 package org.example.model;
 
 import org.example.export.SvgExportSettings;
-import org.example.vector.BackgroundSelection;
-import org.example.vector.EraseStroke;
-import org.example.vector.PixelCoordinate;
-import org.example.vector.RegionSeed;
-import org.example.vector.SubjectMask;
-import org.example.vector.TraceOptions;
+import org.example.vector.*;
 
 import java.awt.*;
 import java.util.*;
@@ -48,6 +43,23 @@ public final class IconPack {
 
     public void addIcon(IconAsset icon) {
         icons.add(icon);
+    }
+
+    /**
+     * Removes the icon together with all of its edits.
+     */
+    public synchronized boolean removeIcon(IconAsset icon) {
+        boolean removed = icons.removeIf(candidate -> candidate == icon);
+        backgroundSelections.remove(icon);
+        backgroundHistory.remove(icon);
+        backgroundRedo.remove(icon);
+        hiddenLayerColors.remove(icon);
+        subjectMasks.remove(icon);
+        layerColors.remove(icon);
+        subjectFrames.remove(icon);
+        layerNames.remove(icon);
+        layerOrders.remove(icon);
+        return removed;
     }
 
     /** Forgets every icon, edit and setting, as a new package would start. */
