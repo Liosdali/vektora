@@ -178,7 +178,7 @@ public final class IconWorkspace extends BorderPane {
     private void buildHeader() {
         Label mark = new Label("V");
         mark.getStyleClass().add("brand-mark");
-        Label title = new Label("Vektora");
+        Label title = new Label("Vectora");
         title.getStyleClass().add("brand-title");
         Label subtitle = new Label("Görseli arka planından ayır, katmanlarını düzenle, SVG logo olarak paketle.");
         subtitle.getStyleClass().add("muted");
@@ -569,7 +569,7 @@ public final class IconWorkspace extends BorderPane {
     private void updateTitle() {
         if (getWindow() instanceof javafx.stage.Stage stage) {
             String name = projectFile == null ? "Adsız proje" : projectFile.getFileName().toString();
-            stage.setTitle((dirty ? "• " : "") + name + " — Vektora");
+            stage.setTitle((dirty ? "• " : "") + name + " — Vectora");
         }
     }
 

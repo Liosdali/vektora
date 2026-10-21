@@ -16,7 +16,7 @@ public final class IconPackApplication extends Application {
         Scene scene = new Scene(workspace, 1360, 860);
         scene.getStylesheets().add(
                 IconPackApplication.class.getResource("vektora.css").toExternalForm());
-        stage.setTitle("Vektora | PNG'den SVG ikon paketi");
+        stage.setTitle("Vectora | PNG'den SVG ikon paketi");
         stage.setMinWidth(960);
         stage.setMinHeight(680);
         stage.setScene(scene);

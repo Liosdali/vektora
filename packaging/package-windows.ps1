@@ -22,17 +22,17 @@ try {
     mvn -B -q -DskipTests package dependency:copy-dependencies "-DoutputDirectory=target/package-input" "-DincludeScope=runtime"
     if ($LASTEXITCODE -ne 0) { throw "Maven build failed" }
     $jar = Get-ChildItem target -Filter '*.jar' | Where-Object { $_.Name -notlike '*-sources.jar' } | Select-Object -First 1
-    Copy-Item $jar.FullName target/package-input/vektora.jar -Force
+    Copy-Item $jar.FullName target/package-input/vectora.jar -Force
     Remove-Item target/installer -Recurse -Force -ErrorAction SilentlyContinue
 
     $arguments = @(
         '--type', $Type,
-        '--name', 'Vektora',
+        '--name', 'Vectora',
         '--app-version', $Version,
-        '--vendor', 'Vektora',
+        '--vendor', 'Vectora',
         '--description', 'PNG ve JPG gorsellerden SVG logo ve ikon paketi',
         '--input', 'target/package-input',
-        '--main-jar', 'vektora.jar',
+        '--main-jar', 'vectora.jar',
         '--main-class', 'org.example.Main',
         '--java-options', '-Xmx2g',
         '--dest', 'target/installer'
